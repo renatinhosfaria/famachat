@@ -20,7 +20,7 @@ services:
     ports:
       - "5432:5432"
     networks:
-      - famachat-network
+      - network_public
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d famachat"]
       interval: 30s
@@ -40,7 +40,7 @@ services:
     ports:
       - "6379:6379"
     networks:
-      - famachat-network
+      - network_public
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 30s
@@ -51,9 +51,7 @@ services:
   # FAMACHAT APPLICATION
   # ==============================================
   famachat:
-    build:
-      context: .
-      dockerfile: Dockerfile
+    image: ${REGISTRY:-famachat}:latest
     container_name: famachat-app
     restart: unless-stopped
     depends_on:
@@ -91,13 +89,47 @@ services:
     ports:
       - "5000:5000"
     networks:
-      - famachat-network
+      - network_public
     healthcheck:
       test: ["CMD", "node", "-e", "require('http').get('http://localhost:5000/api/system/health', (res) => process.exit(res.statusCode === 200 ? 0 : 1))"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 60s
+
+  # ==============================================
+  # BACKUP SERVICE (PROFILE)
+  # ==============================================
+  backup:
+    image: postgres:16-alpine
+    container_name: famachat-backup
+    restart: "no"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PGHOST: postgres
+      PGPORT: 5432
+      PGDATABASE: famachat
+      PGUSER: postgres
+      PGPASSWORD: ${PGPASSWORD:-IwOLgVnyOfbN}
+    volumes:
+      - backup_data:/backup
+      - ./scripts/backup.sh:/backup.sh:ro
+    networks:
+      - network_public
+    command: >
+      sh -c "
+        while ! pg_isready -h postgres -U postgres; do
+          echo 'Aguardando PostgreSQL...'
+          sleep 2
+        done
+        echo 'PostgreSQL disponível, iniciando backup...'
+        /backup.sh
+        echo 'Backup concluído'
+      "
+    profiles:
+      - backup
 
 # ==============================================
 # NETWORKS
@@ -112,10 +144,7 @@ networks:
 # ==============================================
 volumes:
   postgres_data:
-    driver: local
   redis_data:
-    driver: local
   uploads_data:
-    driver: local
   logs_data:
-    driver: local
+  backup_data:

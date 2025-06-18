@@ -66,10 +66,17 @@ else
     print_status "Rede network_public encontrada"
 fi
 
-# Remove any existing bridge networks that might conflict
+# Remove any existing famachat networks that might conflict
 if docker network ls | grep -q "famachat-network"; then
-    print_status "Removendo rede bridge conflitante..."
+    print_status "Removendo rede conflitante..."
     docker network rm famachat-network 2>/dev/null || true
+fi
+
+# Remove any existing famachat stack that might use old networks
+if docker stack ls | grep -q "famachat"; then
+    print_status "Removendo stack anterior para evitar conflitos de rede..."
+    docker stack rm famachat
+    sleep 10
 fi
 
 # ==============================================
