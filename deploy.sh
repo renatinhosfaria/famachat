@@ -61,6 +61,14 @@ fi
 if ! docker network ls | grep -q "traefik"; then
     print_warning "Rede Traefik não encontrada. Criando rede..."
     docker network create traefik
+    print_status "Rede Traefik criada ✅"
+fi
+
+# Check if running in Docker Swarm mode
+if docker info --format '{{.Swarm.LocalNodeState}}' | grep -q "active"; then
+    print_warning "Docker Swarm detectado. Desabilitando modo swarm para usar docker-compose..."
+    docker swarm leave --force 2>/dev/null || true
+    print_status "Modo swarm desabilitado ✅"
 fi
 
 print_status "Pré-requisitos verificados ✅"
