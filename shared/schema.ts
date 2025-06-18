@@ -122,6 +122,26 @@ export const EvolutionAPIStatusMapping = {
   "connecting": WhatsAppInstanceStatus.CONNECTING,
 } as const;
 
+// Enum para tipos de agendamento
+export const AppointmentType = {
+  VISITA: "Visita",
+  REUNIAO: "Reunião",
+  ATENDIMENTO: "Atendimento",
+  LIGACAO: "Ligação",
+  VIDEO_CHAMADA: "Vídeo Chamada"
+} as const;
+
+// Enum para status de agendamento
+export const AppointmentStatus = {
+  AGENDADO: "Agendado",
+  CONFIRMADO: "Confirmado",
+  EM_ANDAMENTO: "Em Andamento",
+  CONCLUIDO: "Concluído",
+  CANCELADO: "Cancelado",
+  NAO_COMPARECEU: "Não Compareceu",
+  REAGENDADO: "Reagendado"
+} as const;
+
 // Cliente model (antigo Lead)
 export const clientes = pgTable("clientes", {
   id: serial("id").primaryKey(),
@@ -332,6 +352,8 @@ export const sistemaWhatsappInstances = pgTable("sistema_whatsapp_instances", {
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
+
+
 
 // Sistema de Configuração Facebook
 export const sistemaFacebookConfig = pgTable("sistema_facebook_config", {
@@ -552,6 +574,32 @@ export type InsertImoveisProprietariosPf = z.infer<typeof insertImoveisProprieta
 export type InsertImoveisEmpreendimentos = z.infer<typeof insertImoveisEmpreendimentosSchema>;
 export type InsertImoveisApartamentos = z.infer<typeof insertImoveisApartamentosSchema>;
 
+// Legacy Lead types for compatibility
+export type Lead = typeof leads.$inferSelect;
+export type InsertLead = z.infer<typeof insertSistemaLeadSchema>;
+export type UpdateLead = Partial<InsertLead>;
+
+// WhatsApp Instance types
+export type WhatsappInstance = typeof sistemaWhatsappInstances.$inferSelect;
+export type InsertWhatsappInstance = z.infer<typeof insertSistemaWhatsappInstancesSchema>;
+
+// WhatsApp Log types for compatibility
+export interface WhatsappLog {
+  id: number;
+  instanceId?: string | null;
+  type: string;
+  message: string;
+  data?: any;
+  createdAt: Date;
+}
+
+export interface InsertWhatsappLog {
+  instanceId?: string | null;
+  type: string;
+  message: string;
+  data?: any;
+}
+
 // Relations
 export const usersRelations = relations(users, ({ many }) => ({
   assignedClientes: many(clientes, { relationName: "cliente_assigned_user" }),
@@ -657,3 +705,11 @@ export const imoveisContatosConstructoraRelations = relations(imoveisContatosCon
     references: [imoveisConstrutoras.idConstrutora],
   }),
 }));
+
+// Legacy compatibility exports (placed at end to avoid declaration order issues)
+export const whatsappInstances = sistemaWhatsappInstances;
+export const insertWhatsappInstanceSchema = insertSistemaWhatsappInstancesSchema;
+export const facebookConfig = sistemaFacebookConfig;
+export const leadAutomationConfig = sistemaConfigAutomacaoLeads;
+export const insertLeadSchema = insertSistemaLeadSchema;
+export const updateLeadSchema = insertSistemaLeadSchema.partial();
