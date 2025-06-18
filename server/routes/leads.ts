@@ -15,17 +15,47 @@ const checkGestor = checkRole('Gestor');
 // Rota para obter todos os leads da tabela sistema_leads
 router.get('/all', async (req, res) => {
   try {
-    const filter = {
-      page: 1,
-      pageSize: 1000,
-      includeCount: true
-    };
+    // Buscar diretamente da tabela sistema_leads usando SQL
+    const { executeSQL } = await import('../database');
     
-    const result = await storage.getLeads(filter);
-    res.json(result);
+    const query = `
+      SELECT 
+        id,
+        full_name as "fullName",
+        email,
+        phone,
+        source,
+        source_details as "sourceDetails",
+        status,
+        assigned_to as "assignedTo",
+        notes,
+        is_recurring as "isRecurring",
+        cliente_id as "clienteId",
+        created_at as "createdAt",
+        updated_at as "updatedAt",
+        tags,
+        last_activity_date as "lastActivityDate",
+        score,
+        interesse,
+        budget,
+        meta_data as "metaData"
+      FROM sistema_leads 
+      ORDER BY created_at DESC 
+      LIMIT 1000
+    `;
+    
+    const leads = await executeSQL(query);
+    const totalQuery = 'SELECT COUNT(*) as count FROM sistema_leads';
+    const totalResult = await executeSQL(totalQuery);
+    const total = totalResult[0]?.count || 0;
+    
+    res.json({
+      leads: leads || [],
+      total: parseInt(total)
+    });
   } catch (error) {
-    leadLogger.error('Erro ao listar todos os leads', error);
-    res.status(500).json({ error: 'Erro ao listar todos os leads' });
+    leadLogger.error('Erro ao listar todos os leads da tabela sistema_leads:', error);
+    res.status(500).json({ error: 'Erro ao listar todos os leads', leads: [] });
   }
 });
 

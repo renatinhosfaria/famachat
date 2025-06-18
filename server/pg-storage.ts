@@ -1557,21 +1557,21 @@ export class PgStorage implements IStorage {
       const conditions = [];
       
       if (filter?.status) {
-        conditions.push(eq(leads.status, filter.status));
+        conditions.push(eq(schema.sistemaLeads.status, filter.status));
       }
       
       if (filter?.assignedTo) {
-        conditions.push(eq(leads.assignedTo, filter.assignedTo));
+        conditions.push(eq(schema.sistemaLeads.assignedTo, filter.assignedTo));
       }
       
       if (filter?.source) {
-        conditions.push(eq(leads.source, filter.source));
+        conditions.push(eq(schema.sistemaLeads.source, filter.source));
       }
       
       if (filter?.searchTerm) {
         const term = `%${filter.searchTerm}%`;
         conditions.push(
-          sql`(${leads.fullName} ILIKE ${term} OR ${leads.email} ILIKE ${term} OR ${leads.phone} ILIKE ${term})`
+          sql`(${schema.sistemaLeads.fullName} ILIKE ${term} OR ${schema.sistemaLeads.email} ILIKE ${term} OR ${schema.sistemaLeads.phone} ILIKE ${term})`
         );
       }
       
@@ -1592,29 +1592,51 @@ export class PgStorage implements IStorage {
           startDate.setFullYear(now.getFullYear() - 1);
         }
         
-        conditions.push(gt(leads.createdAt, startDate));
+        conditions.push(gt(schema.sistemaLeads.createdAt, startDate));
       }
       
       const whereClause = conditions.length > 0 
         ? and(...conditions) 
         : undefined;
       
-      // Consulta principal para os leads - apenas da tabela sistema_leads
-      const result = await db.query.leads.findMany({
-        where: whereClause,
-        orderBy: [desc(leads.createdAt)],
-        limit: pageSize,
-        offset: offset,
-        with: {
-          user: true
-        }
-      });
+      // Consulta principal para os leads - usando SQL direto da tabela sistema_leads
+      const query = db.select({
+        id: schema.sistemaLeads.id,
+        fullName: schema.sistemaLeads.fullName,
+        email: schema.sistemaLeads.email,
+        phone: schema.sistemaLeads.phone,
+        source: schema.sistemaLeads.source,
+        sourceDetails: schema.sistemaLeads.sourceDetails,
+        status: schema.sistemaLeads.status,
+        assignedTo: schema.sistemaLeads.assignedTo,
+        notes: schema.sistemaLeads.notes,
+        isRecurring: schema.sistemaLeads.isRecurring,
+        clienteId: schema.sistemaLeads.clienteId,
+        createdAt: schema.sistemaLeads.createdAt,
+        updatedAt: schema.sistemaLeads.updatedAt,
+        tags: schema.sistemaLeads.tags,
+        lastActivityDate: schema.sistemaLeads.lastActivityDate,
+        score: schema.sistemaLeads.score,
+        interesse: schema.sistemaLeads.interesse,
+        budget: schema.sistemaLeads.budget,
+        metaData: schema.sistemaLeads.metaData
+      })
+      .from(schema.sistemaLeads)
+      .orderBy(desc(schema.sistemaLeads.createdAt))
+      .limit(pageSize)
+      .offset(offset);
+
+      if (whereClause) {
+        query.where(whereClause);
+      }
+
+      const result = await query;
       
       let total = 0;
       if (includeCount) {
         // Consulta para contagem total
         const countResult = await db.select({ count: sql<number>`count(*)` })
-          .from(leads)
+          .from(schema.sistemaLeads)
           .where(whereClause || sql`1=1`);
         
         total = Number(countResult[0]?.count || 0);
