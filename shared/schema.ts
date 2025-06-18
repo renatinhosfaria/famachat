@@ -49,15 +49,13 @@ export const MeioContato = {
   PRESENCIAL: "Presencial"
 } as const;
 
-// Enum para status do cliente
+// Enum para status do cliente (baseado nos dados reais do banco)
 export const ClienteStatus = {
   SEM_ATENDIMENTO: "Sem Atendimento",
-  EM_ATENDIMENTO: "Em Atendimento", 
-  AGENDADO: "Agendado",
-  VISITOU: "Visitou",
-  VENDIDO: "Vendido",
-  PERDIDO: "Perdido",
-  CANCELADO: "Cancelado"
+  NAO_RESPONDEU: "Não Respondeu",
+  AGENDAMENTO: "Agendamento",
+  VISITA: "Visita",
+  VENDA: "Venda"
 } as const;
 
 // Enum para status de leads
