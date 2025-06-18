@@ -1,108 +1,245 @@
-# FamaChat - Sistema de Gestão Imobiliária
+# FamaChat - Sistema Completo de Gestão Imobiliária
 
-Sistema completo para gestão de leads, clientes e vendas no mercado imobiliário brasileiro, com integração WhatsApp, IA e automações avançadas.
+Sistema avançado para gestão de leads, clientes e vendas imobiliárias com integração WhatsApp, IA e análise de performance.
 
-## 🚀 Tecnologias
+## Arquitetura
 
-- **Frontend**: React.js + TypeScript + Tailwind CSS
+- **Frontend**: React 18 + TypeScript + Tailwind CSS
 - **Backend**: Node.js + Express + TypeScript
 - **Database**: PostgreSQL + Drizzle ORM
-- **Cache**: Redis (com fallback para memória)
-- **Container**: Docker + Docker Swarm
-- **Proxy**: Traefik (SSL automático)
+- **Cache**: Redis (híbrido com fallback em memória)
+- **Containerização**: Docker + Docker Compose
+- **Proxy**: Traefik com SSL automático
 
-## 🔧 Integrações
+## Funcionalidades
 
-- **WhatsApp**: Evolution API para automação
-- **IA**: OpenAI GPT-4 para respostas inteligentes
-- **Mapas**: Google Maps API
-- **Social**: Facebook, Instagram, LinkedIn
-- **Analytics**: Google Analytics
+### Dashboard Analytics
+- Métricas em tempo real
+- Relatórios de performance por usuário
+- Gráficos de conversão
+- Ranking de produtividade
 
-## 📦 Deploy Rápido
+### Gestão de Leads
+- Captura automatizada via webhooks
+- Distribuição inteligente
+- Sistema de SLA com cascata
+- Acompanhamento de conversão
 
-### VPS com Docker
+### WhatsApp Integration
+- Múltiplas instâncias simultâneas
+- Templates personalizados
+- Envio automatizado
+- QR code para conexão
+
+### IA Conversacional
+- Integração OpenAI GPT-4
+- Respostas automáticas
+- Análise de sentimentos
+- Sugestões inteligentes
+
+### Sistema de Clientes
+- Kanban board visual
+- Histórico completo de interações
+- Agendamentos integrados
+- Pipeline de vendas
+
+## Deploy Rápido
+
 ```bash
-# Clone o repositório
+# 1. Clonar repositório
 git clone https://github.com/renatinhosfaria/famachat.git
 cd famachat
 
-# Configure variáveis de ambiente
-cp .env.production .env
-# Edite .env com suas credenciais
-
-# Deploy automático
-chmod +x deploy.sh
-./deploy.sh
+# 2. Configurar domínio e executar deploy
+./deploy.sh famachat.seudominio.com
 ```
 
-### Docker Compose
+## Configuração Manual
+
+### Pré-requisitos
+- Docker 20.10+
+- Docker Compose 2.0+
+- Traefik configurado (opcional)
+
+### Variáveis de Ambiente
+
+Copie `.env.production` para `.env` e configure:
+
+```env
+# Domínio
+APP_URL=https://famachat.seudominio.com
+
+# APIs obrigatórias
+OPENAI_API_KEY=sk-your-openai-key
+EVOLUTION_API_URL=https://evolution.famachat.com.br
+EVOLUTION_API_KEY=your-evolution-key
+
+# APIs opcionais
+GOOGLE_MAPS_API_KEY=your-maps-key
+FACEBOOK_APP_ID=your-facebook-id
+```
+
+### Inicialização
+
 ```bash
+# Construir e iniciar serviços
 docker-compose up -d
+
+# Verificar status
+docker-compose ps
+
+# Ver logs
+docker-compose logs -f famachat
 ```
 
-### Docker Swarm
+### Migrações
+
 ```bash
-docker stack deploy -c docker-compose.yml famachat
+# Executar migrações do banco
+docker-compose exec famachat npm run db:push
 ```
 
-## 🔐 Configuração
+## URLs de Acesso
 
-### Variáveis Obrigatórias
-```env
-DATABASE_URL=postgresql://user:pass@host:5432/db
-JWT_SECRET=your_jwt_secret_here
-SESSION_SECRET=your_session_secret_here
+- **Aplicação**: http://localhost:5000
+- **PostgreSQL**: localhost:5432
+- **Redis**: localhost:6379
+
+## Comandos Úteis
+
+```bash
+# Parar serviços
+docker-compose down
+
+# Reiniciar aplicação
+docker-compose restart famachat
+
+# Backup do banco
+docker-compose run --rm backup
+
+# Logs em tempo real
+docker-compose logs -f
+
+# Acesso ao container
+docker-compose exec famachat sh
 ```
 
-### APIs Opcionais
-```env
-EVOLUTION_API_KEY=your_evolution_key
-OPENAI_API_KEY=your_openai_key
-GOOGLE_MAPS_API_KEY=your_maps_key
+## Monitoramento
+
+### Health Checks
+- Aplicação: `GET /api/system/health`
+- Database: Health check automático
+- Redis: Health check automático
+
+### Métricas
+- CPU e Memória via Docker stats
+- Logs estruturados em `/app/logs`
+- Métricas de API via endpoints
+
+## Backup e Restore
+
+### Backup Automático
+```bash
+docker-compose run --rm backup
 ```
 
-## 📊 Monitoramento
+### Restore Manual
+```bash
+# Copiar backup para container
+docker cp backup.sql famachat-postgres:/backup.sql
 
-- Health: `/api/health`
-- Cache: `/api/system/cache`
-- Stats: `/api/system/stats`
+# Restaurar
+docker-compose exec postgres psql -U postgres -d famachat < /backup.sql
+```
 
-## 🏗️ Arquitetura
+## Scaling
 
-- **Cache Híbrido**: Redis externo com fallback para memória
-- **Migrations**: Automáticas no startup
-- **SSL**: Certificados automáticos via Traefik
-- **Escalabilidade**: Suporte a múltiplas instâncias
-- **Observabilidade**: Logs estruturados e métricas
+### Horizontal Scaling
+```yaml
+# docker-compose.yml
+famachat:
+  deploy:
+    replicas: 3
+```
 
-## 📱 Funcionalidades
+### Load Balancer
+Traefik configurado automaticamente para balanceamento.
 
-- Gestão completa de leads e clientes
-- Automação WhatsApp com IA
-- Dashboard com métricas em tempo real
-- Sistema de agendamentos e visitas
-- Controle de vendas e comissões
-- Relatórios e analytics avançados
-- Sistema de usuários e permissões
-- Integração com redes sociais
+## Troubleshooting
 
-## 🛠️ Desenvolvimento
+### Logs Detalhados
+```bash
+# Logs da aplicação
+docker-compose logs famachat
 
+# Logs do banco
+docker-compose logs postgres
+
+# Logs do Redis
+docker-compose logs redis
+```
+
+### Problemas Comuns
+
+**Erro de conexão com banco:**
+```bash
+# Verificar se PostgreSQL está rodando
+docker-compose exec postgres pg_isready
+
+# Verificar logs
+docker-compose logs postgres
+```
+
+**Erro de permissão em uploads:**
+```bash
+# Corrigir permissões
+docker-compose exec famachat chown -R famachat:nodejs /app/server/uploads
+```
+
+**Cache Redis indisponível:**
+Sistema utiliza fallback automático para cache em memória.
+
+## Desenvolvimento
+
+### Ambiente Local
 ```bash
 # Instalar dependências
 npm install
 
-# Executar em desenvolvimento
+# Iniciar desenvolvimento
 npm run dev
 
-# Build para produção
+# Build de produção
 npm run build
-
-# Iniciar produção
-npm start
 ```
 
-## 📄 Licença
+### Estrutura do Projeto
+```
+famachat/
+├── client/          # Frontend React
+├── server/          # Backend Node.js
+├── shared/          # Schemas compartilhados
+├── docker-compose.yml
+├── Dockerfile
+└── deploy.sh
+```
 
-MIT License - veja LICENSE para detalhes.
+## Segurança
+
+- Autenticação JWT
+- Rate limiting configurado
+- Sanitização de inputs
+- HTTPS obrigatório em produção
+- Secrets em variáveis de ambiente
+
+## Suporte
+
+Para problemas técnicos:
+1. Verificar logs: `docker-compose logs`
+2. Verificar health checks
+3. Conferir configurações de ambiente
+4. Consultar documentação das APIs integradas
+
+## Licença
+
+Proprietary - Fama Negócios Imobiliários
