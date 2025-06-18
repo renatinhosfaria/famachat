@@ -61,16 +61,6 @@ export default function Sidebar({ className, collapsed = false }: SidebarProps) 
             icon: LucideUsers,
           },
           {
-            name: "Imóveis",
-            href: "/imoveis",
-            icon: LucideHome,
-          },
-          {
-            name: "Agenda",
-            href: "/agenda",
-            icon: LucideCalendar,
-          },
-          {
             name: "Metas",
             href: "/metas",
             icon: LucideFileBarChart,
@@ -99,7 +89,8 @@ export default function Sidebar({ className, collapsed = false }: SidebarProps) 
             name: "Webhook",
             href: "/webhook",
             icon: LucideSettings,
-          }
+          },
+          ...sharedItems
         ];
       
       case 'Central de Atendimento':
