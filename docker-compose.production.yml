@@ -18,7 +18,7 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
     networks:
-      - famachat-network
+      - network_public
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d famachat"]
       interval: 30s
@@ -42,7 +42,7 @@ services:
     volumes:
       - redis_data:/data
     networks:
-      - famachat-network
+      - network_public
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 30s
@@ -59,9 +59,7 @@ services:
   # FAMACHAT APPLICATION
   # ==============================================
   famachat:
-    build:
-      context: .
-      dockerfile: Dockerfile
+    image: ${REGISTRY:-famachat}:latest
     container_name: famachat-app
     restart: unless-stopped
     depends_on:
@@ -93,43 +91,25 @@ services:
       FACEBOOK_APP_ID: ${FACEBOOK_APP_ID:-1600246764019855}
       FACEBOOK_APP_SECRET: ${FACEBOOK_APP_SECRET:-1600246764019855}
       FACEBOOK_PAGE_TOKEN: ${FACEBOOK_PAGE_TOKEN:-711015865662935}
-      RATE_LIMIT_WINDOW_MS: 900000
-      RATE_LIMIT_MAX_REQUESTS: 100
-      REQUEST_SIZE_LIMIT: 50mb
-      URL_ENCODED_LIMIT: 50mb
-      JSON_LIMIT: 10mb
     volumes:
       - uploads_data:/app/server/uploads
       - logs_data:/app/logs
     networks:
-      - famachat-network
       - network_public
     labels:
       # Traefik Configuration
       - "traefik.enable=true"
       - "traefik.docker.network=network_public"
-      
-      # HTTP Router
       - "traefik.http.routers.famachat.rule=Host(`${DOMAIN:-famachat.seudominio.com}`)"
       - "traefik.http.routers.famachat.entrypoints=websecure"
       - "traefik.http.routers.famachat.tls.certresolver=letsencrypt"
-      
-      # Service
       - "traefik.http.services.famachat.loadbalancer.server.port=5000"
-      
-      # Middleware
-      - "traefik.http.routers.famachat.middlewares=famachat-headers,famachat-compress"
+      - "traefik.http.routers.famachat.middlewares=famachat-headers"
       - "traefik.http.middlewares.famachat-headers.headers.customrequestheaders.X-Forwarded-Proto=https"
-      - "traefik.http.middlewares.famachat-headers.headers.customrequestheaders.X-Real-IP="
-      - "traefik.http.middlewares.famachat-compress.compress=true"
-      
-      # HTTP to HTTPS Redirect
       - "traefik.http.routers.famachat-http.rule=Host(`${DOMAIN:-famachat.seudominio.com}`)"
       - "traefik.http.routers.famachat-http.entrypoints=web"
       - "traefik.http.routers.famachat-http.middlewares=redirect-to-https"
       - "traefik.http.middlewares.redirect-to-https.redirectscheme.scheme=https"
-      - "traefik.http.middlewares.redirect-to-https.redirectscheme.permanent=true"
-      
     healthcheck:
       test: ["CMD", "node", "-e", "require('http').get('http://localhost:5000/api/system/health', (res) => process.exit(res.statusCode === 200 ? 0 : 1))"]
       interval: 30s
@@ -144,29 +124,34 @@ services:
           memory: 512M
 
   # ==============================================
-  # BACKUP SERVICE (OPCIONAL)
+  # BACKUP SERVICE (PROFILE)
   # ==============================================
   backup:
     image: postgres:16-alpine
     container_name: famachat-backup
     restart: "no"
     depends_on:
-      - postgres
+      postgres:
+        condition: service_healthy
     environment:
+      PGHOST: postgres
+      PGPORT: 5432
+      PGDATABASE: famachat
+      PGUSER: postgres
       PGPASSWORD: ${PGPASSWORD:-IwOLgVnyOfbN}
     volumes:
       - backup_data:/backup
       - ./scripts/backup.sh:/backup.sh:ro
     networks:
-      - famachat-network
+      - network_public
     command: >
       sh -c "
         while ! pg_isready -h postgres -U postgres; do
           echo 'Aguardando PostgreSQL...'
           sleep 2
         done
-        echo 'PostgreSQL pronto - executando backup'
-        pg_dump -h postgres -U postgres -d famachat > /backup/famachat_backup_$$(date +%Y%m%d_%H%M%S).sql
+        echo 'PostgreSQL disponível, iniciando backup...'
+        /backup.sh
         echo 'Backup concluído'
       "
     profiles:
@@ -176,30 +161,16 @@ services:
 # NETWORKS
 # ==============================================
 networks:
-  famachat-network:
-    driver: bridge
-    name: famachat-network
-    internal: true
   network_public:
-    external: true
     name: network_public
+    external: true
 
 # ==============================================
 # VOLUMES
 # ==============================================
 volumes:
   postgres_data:
-    driver: local
-    name: famachat_postgres_data
   redis_data:
-    driver: local
-    name: famachat_redis_data
   uploads_data:
-    driver: local
-    name: famachat_uploads_data
   logs_data:
-    driver: local
-    name: famachat_logs_data
   backup_data:
-    driver: local
-    name: famachat_backup_data
