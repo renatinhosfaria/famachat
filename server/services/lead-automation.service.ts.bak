@@ -1,0 +1,696 @@
+/**
+ * Serviço para automação de processamento de leads
+ */
+import { db } from '../db';
+import { eq, and, desc, count, sql, SQL, or, inArray } from 'drizzle-orm';
+import { 
+  leads,
+  users,
+  type InsertLead,
+  type Lead,
+  type User,
+  LeadStatusEnum
+} from '@shared/schema';
+import { getAutomationConfig } from './automation-config.service';
+
+/**
+ * Tipos de processamento de lead 
+ */
+export enum LeadProcessingType {
+  NEW_LEAD = 'new_lead',
+  RECURRING_LEAD = 'recurring_lead',
+  REASSIGNMENT = 'reassignment',
+  ESCALATION = 'escalation'
+}
+
+/**
+ * Interface para os dados de processamento 
+ */
+export interface LeadProcessingData {
+  type: LeadProcessingType;
+  lead: Lead | InsertLead;
+  userId?: number; // Opcional: ID do usuário para atribuição manual
+}
+
+/**
+ * Resultado do processamento de automação
+ */
+export interface AutomationResult {
+  leadId?: number;
+  assignedTo?: number;
+  assignedToName?: string; 
+  status: string;
+  isRecurring?: boolean;
+  message: string;
+  success: boolean;
+}
+
+/**
+ * Processa um lead de acordo com as regras de automação configuradas
+ */
+export async function processLeadAutomation(
+  data: LeadProcessingData
+): Promise<AutomationResult> {
+  try {
+    // Obter configuração de automação
+    const config = await getAutomationConfig();
+    
+    console.log("Processando lead automação com configuração:", {
+      distributionMethod: config.distributionMethod,
+      rotationUsers: config.rotationUsers,
+      byEmail: config.byEmail,
+      byPhone: config.byPhone,
+      byName: config.byName
+    });
+    
+    if (!config.rotationUsers || !Array.isArray(config.rotationUsers) || config.rotationUsers.length === 0) {
+      console.warn("Automação configurada sem usuários de rotação!");
+    } else {
+      console.log(`Existem ${config.rotationUsers.length} usuários configurados para distribuição: ${config.rotationUsers.join(', ')}`);
+    }
+    
+    // Verificar se é um lead recorrente
+    let existingLead: Lead | null = null;
+    let isRecurring = false;
+    
+    // Obter as regras de identificação de leads recorrentes da configuração
+    const checkByEmail = config.byEmail !== false; // Verificar por e-mail por padrão
+    const checkByPhone = config.byPhone !== false; // Verificar por telefone por padrão
+    const checkByName = config.byName !== false;   // Verificar por nome por padrão
+    
+    // Verificar por e-mail se a configuração permitir
+    if (checkByEmail && 'email' in data.lead && data.lead.email) {
+      existingLead = await findLeadByEmail(data.lead.email);
+      if (existingLead) isRecurring = true;
+    }
+    
+    // Verificar por telefone se a configuração permitir e ainda não encontrou
+    if (!existingLead && checkByPhone && 'phone' in data.lead && data.lead.phone) {
+      existingLead = await findLeadByPhone(data.lead.phone);
+      if (existingLead) isRecurring = true;
+    }
+    
+    // Verificar por nome se a configuração permitir e ainda não encontrou
+    if (!existingLead && checkByName && 'fullName' in data.lead && data.lead.fullName) {
+      existingLead = await findLeadByName(data.lead.fullName);
+      if (existingLead) isRecurring = true;
+    }
+    
+    // A verificação de horário de funcionamento foi removida completamente
+    // Não há mais necessidade de checar o horário de funcionamento
+    
+    // Tratar lead recorrente
+    if (isRecurring && existingLead) {
+      return await handleRecurringLead(existingLead, data, config);
+    }
+    
+    // Para novos leads, aplicar regras de distribuição
+    console.log("Obtendo targetUserId para o lead através do método:", config.distributionMethod);
+    console.log("Dados do lead:", {
+      fullName: data.lead.fullName,
+      email: data.lead.email || 'Não fornecido',
+      phone: data.lead.phone || 'Não fornecido',
+      source: data.lead.source
+    });
+    
+    const targetUserId = data.userId || 
+      await getTargetUserIdByDistributionMethod(config.distributionMethod, config);
+      
+    console.log("Resultado da distribuição - ID de usuário selecionado:", targetUserId);
+      
+    if (!targetUserId) {
+      console.log("ERRO: Não foi possível encontrar um consultor disponível!");
+      
+      // Mesmo sem consultor, criar o lead para não perder dados
+      console.log("Criando lead sem atribuição a consultor.");
+      const newLead = await createNewLead(data.lead);
+      console.log("ID do lead criado sem consultor:", newLead.id);
+      
+      return {
+        leadId: newLead.id,
+        status: LeadStatusEnum.SEM_ATENDIMENTO,
+        message: 'Não foi possível encontrar um consultor disponível',
+        success: true // Mudamos para true pois o lead foi criado com sucesso
+      };
+    }
+    
+    // Se for uma reassignment ou um lead existente, atualizar o lead
+    if (data.type === LeadProcessingType.REASSIGNMENT && 'id' in data.lead) {
+      const updatedLead = await updateLeadAssignment(data.lead.id, targetUserId);
+      if (!updatedLead) {
+        return {
+          status: LeadStatusEnum.SEM_ATENDIMENTO,
+          message: 'Erro ao reatribuir lead',
+          success: false
+        };
+      }
+      
+      const assignedUser = await getUserById(targetUserId);
+      
+      return {
+        leadId: updatedLead.id,
+        assignedTo: targetUserId,
+        assignedToName: assignedUser?.fullName || 'Consultor',
+        status: updatedLead.status,
+        message: 'Lead reatribuído com sucesso',
+        success: true
+      };
+    }
+    
+    // Para novos leads, criar o lead no banco de dados
+    console.log('Criando novo lead com os seguintes dados:', JSON.stringify(data.lead));
+    console.log('Atribuindo ao usuário ID:', targetUserId);
+    
+    try {
+      console.log('DIAGNÓSTICO PRÉ-CRIAÇÃO: Dados do lead:', JSON.stringify(data.lead));
+      console.log('DIAGNÓSTICO PRÉ-CRIAÇÃO: Target User ID:', targetUserId);
+      
+      const newLead = await createNewLead(data.lead, targetUserId);
+      
+      console.log('DIAGNÓSTICO PÓS-CRIAÇÃO: Resultado da função createNewLead:', 
+                  newLead ? `LEAD EXISTE (id: ${newLead.id})` : 'LEAD NULO');
+      console.log('DIAGNÓSTICO PÓS-CRIAÇÃO: Lead completo:', newLead ? JSON.stringify(newLead) : 'NULO');
+      
+      if (!newLead) {
+        console.error('ERRO CRÍTICO: Falha ao criar lead - newLead é nulo');
+        return {
+          status: LeadStatusEnum.SEM_ATENDIMENTO,
+          message: 'Falha ao criar lead: resultado nulo retornado pela função createNewLead',
+          success: false
+        };
+      }
+      
+      if (newLead.id === undefined || newLead.id === null) {
+        console.error('ERRO CRÍTICO: Lead criado mas ID é undefined/null', JSON.stringify(newLead));
+        return {
+          status: LeadStatusEnum.SEM_ATENDIMENTO,
+          message: 'Falha ao criar lead: ID não gerado corretamente',
+          success: false
+        };
+      }
+      
+      // Verificação adicional para garantir tipo numérico
+      if (typeof newLead.id !== 'number') {
+        console.error(`ERRO CRÍTICO: Lead ID não é numérico - ${typeof newLead.id}:`, newLead.id);
+        return {
+          status: LeadStatusEnum.SEM_ATENDIMENTO,
+          message: `Falha ao criar lead: ID tem tipo inválido (${typeof newLead.id})`,
+          success: false
+        };
+      }
+      
+      const assignedUser = await getUserById(targetUserId);
+      console.log('Usuário atribuído:', assignedUser ? JSON.stringify(assignedUser) : 'Não encontrado');
+      
+      console.log('DIAGNÓSTICO FINAL: Lead criado com sucesso:', {
+        leadId: newLead.id,
+        assignedTo: targetUserId,
+        assignedToName: assignedUser?.fullName || 'Consultor'
+      });
+      
+      return {
+        leadId: newLead.id,
+        assignedTo: targetUserId,
+        assignedToName: assignedUser?.fullName || 'Consultor',
+        status: newLead.status,
+        message: 'Novo lead criado e atribuído com sucesso',
+        success: true
+      };
+    } catch (error) {
+      console.error('ERRO AO CRIAR LEAD:', error);
+      return {
+        status: LeadStatusEnum.SEM_ATENDIMENTO,
+        message: `Erro ao criar lead: ${error}`,
+        success: false
+      };
+    }
+    
+  } catch (error) {
+    console.error('Erro ao processar automação de lead:', error);
+    return {
+      status: LeadStatusEnum.SEM_ATENDIMENTO,
+      message: 'Erro ao processar automação',
+      success: false
+    };
+  }
+}
+
+
+
+/**
+ * Processa lead recorrente de acordo com as regras de automação
+ * 
+ * Agora usando as novas colunas: keepSameConsultant e assignNewConsultant
+ */
+async function handleRecurringLead(
+  existingLead: Lead,
+  data: LeadProcessingData,
+  config: any
+): Promise<AutomationResult> {
+  // Obter configurações para leads recorrentes
+  const keepSameConsultant = config.keepSameConsultant !== false; // Por padrão, manter o mesmo consultor
+  const assignNewConsultant = config.assignNewConsultant === true; // Por padrão, não atribuir a um novo consultor
+
+  // Se a configuração for para manter o mesmo consultor e existir um consultor atribuído
+  if (keepSameConsultant && existingLead.assignedTo) {
+    // Verificar se o consultor ainda está ativo
+    const consultant = await getUserById(existingLead.assignedTo);
+    if (consultant && consultant.isActive) {
+      // Atualizar lead com novas informações mantendo o mesmo consultor
+      const updatedLead = await updateRecurringLead(existingLead.id, data.lead);
+      
+      return {
+        leadId: existingLead.id,
+        assignedTo: existingLead.assignedTo,
+        assignedToName: consultant.fullName,
+        status: updatedLead?.status || existingLead.status,
+        isRecurring: true,
+        message: 'Lead recorrente atualizado mantendo o mesmo consultor (configuração ativa)',
+        success: true
+      };
+    }
+  }
+  
+  // Se não tiver consultor ou o consultor não estiver ativo,
+  // atribuir a um novo consultor
+  const targetUserId = data.userId || 
+    await getTargetUserIdByDistributionMethod(config.distributionMethod, config);
+    
+  if (targetUserId) {
+    // Atualizar lead com novas informações e novo consultor
+    const updatedLead = await updateRecurringLeadWithNewConsultant(
+      existingLead.id, 
+      data.lead, 
+      targetUserId
+    );
+    
+    const assignedUser = await getUserById(targetUserId);
+    
+    return {
+      leadId: existingLead.id,
+      assignedTo: targetUserId,
+      assignedToName: assignedUser?.fullName || 'Consultor',
+      status: updatedLead?.status || existingLead.status,
+      isRecurring: true,
+      message: 'Lead recorrente atualizado com novo consultor',
+      success: true
+    };
+  }
+  
+  // Caso nenhuma regra seja aplicável, apenas atualiza as informações
+  const updatedLead = await updateRecurringLead(existingLead.id, data.lead);
+  
+  return {
+    leadId: existingLead.id,
+    assignedTo: existingLead.assignedTo,
+    status: updatedLead?.status || existingLead.status,
+    isRecurring: true,
+    message: 'Lead recorrente atualizado',
+    success: true
+  };
+}
+
+/**
+ * Determina o ID do usuário de destino com base no método de distribuição
+ */
+async function getTargetUserIdByDistributionMethod(
+  method: string,
+  config: any
+): Promise<number | undefined> {
+  switch (method) {
+    case 'volume':
+      return await getUserByVolume(config);
+    case 'performance':
+      return await getUserByPerformance(config);
+    case 'round-robin':
+      return await getUserByRoundRobin(config);
+    default:
+      return await getUserByVolume(config); // Método padrão
+  }
+}
+
+/**
+ * Encontra um consultor pelo volume (menor número de leads atribuídos)
+ */
+async function getUserByVolume(config: any): Promise<number | undefined> {
+  // Verificar se há usuários configurados para rotação
+  if (!config.rotationUsers || !Array.isArray(config.rotationUsers) || config.rotationUsers.length === 0) {
+    console.warn('Nenhum usuário configurado para rotação de leads');
+    return undefined;
+  }
+  
+  console.log('Usando lista de rotação de usuários para distribuição por volume:', config.rotationUsers);
+  
+  // Filtros para consultores ativos de acordo com a configuração
+  const whereConditions: SQL[] = [
+    eq(users.isActive, true),
+    // Permite usuários de Comercial ou Central de Atendimento
+    or(
+      eq(users.department, 'Comercial'),
+      eq(users.department, 'Central de Atendimento')
+    ),
+    inArray(users.id, config.rotationUsers)
+  ];
+  
+  // Consulta para obter o consultor com menos leads ativos
+  const consultantsWithLeadCount = await db
+    .select({
+      userId: users.id,
+      leadCount: count(leads.id).as('leadCount')
+    })
+    .from(users)
+    .leftJoin(
+      leads,
+      and(
+        eq(leads.assignedTo, users.id),
+        eq(leads.status, LeadStatusEnum.EM_ATENDIMENTO)
+      )
+    )
+    .where(and(...whereConditions))
+    .groupBy(users.id)
+    .orderBy(sql`lead_count`, 'asc')
+    .limit(1);
+  
+  console.log('Consultores encontrados com contagem de leads:', consultantsWithLeadCount);
+  
+  return consultantsWithLeadCount.length > 0 
+    ? consultantsWithLeadCount[0].userId 
+    : undefined;
+}
+
+/**
+ * Encontra um consultor por desempenho (maior taxa de conversão)
+ */
+async function getUserByPerformance(config: any): Promise<number | undefined> {
+  // Verificar se há usuários configurados para rotação
+  if (!config.rotationUsers || !Array.isArray(config.rotationUsers) || config.rotationUsers.length === 0) {
+    console.warn('Nenhum usuário configurado para rotação de leads (performance)');
+    return undefined;
+  }
+  
+  console.log('Usando lista de rotação de usuários para distribuição por performance:', config.rotationUsers);
+  
+  // Em uma implementação real, seria feita uma análise de desempenho mais elaborada
+  // Aqui, simplificamos para demonstração e usamos apenas os usuários da rotação
+  
+  const consultants = await db
+    .select({
+      id: users.id,
+      department: users.department,
+      isActive: users.isActive
+    })
+    .from(users)
+    .where(
+      and(
+        eq(users.isActive, true),
+        // Permite usuários de Comercial ou Central de Atendimento
+        or(
+          eq(users.department, 'Comercial'),
+          eq(users.department, 'Central de Atendimento')
+        ),
+        sql`${users.id} IN (${config.rotationUsers.join(',')})`
+      )
+    )
+    .limit(1);
+  
+  console.log('Consultores encontrados para performance:', consultants);
+  
+  return consultants.length > 0 ? consultants[0].id : undefined;
+}
+
+/**
+ * Encontra um consultor por round-robin (alternância cíclica)
+ */
+async function getUserByRoundRobin(config: any): Promise<number | undefined> {
+  // Verificar se há usuários configurados para rotação
+  if (!config.rotationUsers || !Array.isArray(config.rotationUsers) || config.rotationUsers.length === 0) {
+    console.warn('Nenhum usuário configurado para rotação de leads');
+    return undefined;
+  }
+  
+  console.log('Usando lista de rotação de usuários:', config.rotationUsers);
+  
+  // Obter a lista de consultores ativos que estão na lista de rotação
+  const activeConsultants = await db
+    .select({
+      id: users.id
+    })
+    .from(users)
+    .where(
+      and(
+        eq(users.isActive, true),
+        // Permite usuários de Comercial ou Central de Atendimento
+        or(
+          eq(users.department, 'Comercial'),
+          eq(users.department, 'Central de Atendimento')
+        ),
+        sql`${users.id} IN (${config.rotationUsers.join(',')})`
+      )
+    );
+  
+  console.log('Consultores ativos encontrados na lista de rotação:', activeConsultants.map(c => c.id));
+  
+  if (activeConsultants.length === 0) {
+    console.warn('Nenhum consultor ativo encontrado na lista de rotação');
+    return undefined;
+  }
+  
+  // Obter o último lead atribuído para determinar o próximo na sequência
+  const lastAssignedLead = await db
+    .select({
+      assignedTo: leads.assignedTo
+    })
+    .from(leads)
+    .where(
+      sql`assigned_to IS NOT NULL`
+    )
+    .orderBy(leads.createdAt, 'desc')
+    .limit(1);
+  
+  let lastAssignedIndex = -1;
+  
+  if (lastAssignedLead.length > 0 && lastAssignedLead[0].assignedTo) {
+    // Encontra o índice do último consultor na lista
+    lastAssignedIndex = activeConsultants.findIndex(
+      c => c.id === lastAssignedLead[0].assignedTo
+    );
+    console.log('Último consultor atribuído:', lastAssignedLead[0].assignedTo, 'índice:', lastAssignedIndex);
+  }
+  
+  // Calcula o próximo índice (round-robin)
+  const nextIndex = (lastAssignedIndex + 1) % activeConsultants.length;
+  console.log('Próximo consultor selecionado:', activeConsultants[nextIndex].id);
+  return activeConsultants[nextIndex].id;
+}
+
+/**
+ * Encontra um lead pelo e-mail
+ */
+async function findLeadByEmail(email: string): Promise<Lead | null> {
+  const results = await db
+    .select()
+    .from(leads)
+    .where(eq(leads.email, email))
+    .orderBy(leads.createdAt, 'desc')
+    .limit(1);
+  
+  return results.length > 0 ? results[0] : null;
+}
+
+/**
+ * Encontra um lead pelo telefone
+ */
+async function findLeadByPhone(phone: string): Promise<Lead | null> {
+  const results = await db
+    .select()
+    .from(leads)
+    .where(eq(leads.phone, phone))
+    .orderBy(leads.createdAt, 'desc')
+    .limit(1);
+  
+  return results.length > 0 ? results[0] : null;
+}
+
+/**
+ * Encontra um lead pelo nome completo (correspondência exata)
+ */
+async function findLeadByName(name: string): Promise<Lead | null> {
+  const results = await db
+    .select()
+    .from(leads)
+    .where(eq(leads.fullName, name))
+    .orderBy(leads.createdAt, 'desc')
+    .limit(1);
+  
+  return results.length > 0 ? results[0] : null;
+}
+
+/**
+ * Obtém um usuário pelo ID
+ */
+async function getUserById(id: number): Promise<User | null> {
+  const results = await db
+    .select()
+    .from(users)
+    .where(eq(users.id, id))
+    .limit(1);
+  
+  return results.length > 0 ? results[0] : null;
+}
+
+/**
+ * Cria um novo lead
+ */
+async function createNewLead(leadData: InsertLead | Lead, assignedTo?: number): Promise<Lead> {
+  try {
+    console.log("DIAGNÓSTICO CREATE: Criando novo lead com dados:", JSON.stringify(leadData));
+    console.log("DIAGNÓSTICO CREATE: Atribuindo ao consultor ID:", assignedTo);
+    
+    // Preparar os dados para inserção
+    const insertData: any = { ...leadData };
+    
+    // Se houver um consultor atribuído, adicionar
+    if (assignedTo) {
+      insertData.assignedTo = assignedTo;
+      console.log("DIAGNÓSTICO CREATE: Consultor atribuído:", assignedTo);
+    }
+    
+    // Definir a data de criação e atualização
+    const now = new Date();
+    insertData.createdAt = now;
+    insertData.updatedAt = now;
+    
+    // Se for um objeto Lead, remover o ID para fazer a inserção
+    if ('id' in insertData) {
+      console.log("DIAGNÓSTICO CREATE: Removendo ID existente para inserção:", insertData.id);
+      delete insertData.id;
+    }
+    
+    // Garantir que temos pelo menos os campos obrigatórios
+    if (!insertData.fullName) {
+      console.warn("AVISO: fullName não definido, usando valor padrão");
+      insertData.fullName = "Lead sem nome";
+    }
+    
+    if (!insertData.phone) {
+      console.warn("AVISO: phone não definido, usando valor padrão");
+      insertData.phone = "Não informado";
+    }
+    
+    if (!insertData.status) {
+      console.log("DIAGNÓSTICO CREATE: Status não definido, usando SEM_ATENDIMENTO");
+      insertData.status = LeadStatusEnum.SEM_ATENDIMENTO;
+    }
+    
+    console.log("DIAGNÓSTICO CREATE: Dados finais para inserção:", JSON.stringify(insertData));
+    
+    // Inserir o lead no banco de dados
+    const result = await db
+      .insert(leads)
+      .values(insertData)
+      .returning();
+    
+    console.log("DIAGNÓSTICO CREATE: Resultado completo da inserção:", JSON.stringify(result));
+    
+    if (!result || result.length === 0) {
+      console.error("ERRO CRÍTICO: Inserção retornou array vazio");
+      throw new Error("A inserção do lead falhou: nenhum resultado retornado");
+    }
+    
+    const newLead = result[0];
+    
+    if (!newLead) {
+      console.error("ERRO CRÍTICO: Primeiro elemento do resultado é null/undefined");
+      throw new Error("A inserção do lead falhou: resultado inválido");
+    }
+    
+    if (newLead.id === undefined || newLead.id === null) {
+      console.error("ERRO CRÍTICO: Lead criado sem ID válido:", JSON.stringify(newLead));
+      throw new Error("A inserção do lead falhou: ID não gerado");
+    }
+    
+    console.log(`DIAGNÓSTICO CREATE: Lead criado com sucesso - ID: ${newLead.id}, Nome: ${newLead.fullName}`);
+    return newLead;
+  } catch (error) {
+    console.error("ERRO CRÍTICO AO CRIAR LEAD:", error);
+    throw error;
+  }
+}
+
+/**
+ * Atualiza a atribuição de um lead existente
+ */
+async function updateLeadAssignment(leadId: number, assignedTo: number): Promise<Lead | null> {
+  const [updatedLead] = await db
+    .update(leads)
+    .set({
+      assignedTo,
+      updatedAt: new Date()
+    })
+    .where(eq(leads.id, leadId))
+    .returning();
+  
+  return updatedLead || null;
+}
+
+/**
+ * Atualiza um lead recorrente mantendo o mesmo consultor
+ */
+async function updateRecurringLead(leadId: number, newData: InsertLead | Lead): Promise<Lead | null> {
+  // Filtrar apenas os campos que devem ser atualizados
+  const updateData: any = {};
+  
+  // Atualizar informações básicas se fornecidas
+  if ('fullName' in newData && newData.fullName) updateData.fullName = newData.fullName;
+  if ('email' in newData && newData.email) updateData.email = newData.email;
+  if ('phone' in newData && newData.phone) updateData.phone = newData.phone;
+  if ('source' in newData && newData.source) updateData.source = newData.source;
+  if ('sourceDetails' in newData && newData.sourceDetails) {
+    updateData.sourceDetails = newData.sourceDetails;
+  }
+  if ('interesse' in newData && newData.interesse) updateData.interesse = newData.interesse;
+  if ('budget' in newData && newData.budget) updateData.budget = newData.budget;
+  
+  // Marcar como lead recorrente
+  updateData.isRecurring = true;
+  
+  // Atualizar data
+  updateData.updatedAt = new Date();
+  updateData.lastActivityDate = new Date();
+  
+  // Executar a atualização
+  const [updatedLead] = await db
+    .update(leads)
+    .set(updateData)
+    .where(eq(leads.id, leadId))
+    .returning();
+  
+  return updatedLead || null;
+}
+
+/**
+ * Atualiza um lead recorrente com um novo consultor
+ */
+async function updateRecurringLeadWithNewConsultant(
+  leadId: number, 
+  newData: InsertLead | Lead,
+  assignedTo: number
+): Promise<Lead | null> {
+  // Obter dados de atualização básicos
+  const updateData: any = await updateRecurringLead(leadId, newData);
+  
+  // Adicionar o novo consultor
+  updateData.assignedTo = assignedTo;
+  
+  // Executar a atualização
+  const [updatedLead] = await db
+    .update(leads)
+    .set({
+      assignedTo,
+      updatedAt: new Date()
+    })
+    .where(eq(leads.id, leadId))
+    .returning();
+  
+  return updatedLead || null;
+}

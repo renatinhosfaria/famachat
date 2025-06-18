@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Teste de Cadastro de Apartamento</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            line-height: 1.6;
+            margin: 0;
+            padding: 20px;
+            max-width: 800px;
+            margin: 0 auto;
+        }
+        h1 {
+            color: #333;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        input, select, textarea {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        textarea {
+            height: 100px;
+        }
+        button {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+        button:hover {
+            background-color: #0069d9;
+        }
+        .result {
+            margin-top: 30px;
+            padding: 15px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            background-color: #f9f9f9;
+        }
+        .error {
+            color: #dc3545;
+            padding: 10px;
+            background-color: #f8d7da;
+            border: 1px solid #f5c6cb;
+            border-radius: 4px;
+            margin-top: 10px;
+        }
+        .success {
+            color: #28a745;
+            padding: 10px;
+            background-color: #d4edda;
+            border: 1px solid #c3e6cb;
+            border-radius: 4px;
+            margin-top: 10px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Teste de Cadastro de Apartamento</h1>
+    
+    <form id="apartment-form">
+        <div class="form-group">
+            <label for="id_empreendimento">ID do Empreendimento</label>
+            <input type="number" id="id_empreendimento" name="id_empreendimento" value="5" required>
+        </div>
+        
+        <div class="form-group">
+            <label for="status_apartamento">Status</label>
+            <select id="status_apartamento" name="status_apartamento">
+                <option value="Disponível">Disponível</option>
+                <option value="Reservado">Reservado</option>
+                <option value="Vendido">Vendido</option>
+            </select>
+        </div>
+        
+        <div class="form-group">
+            <label for="area_privativa_apartamento">Área Privativa (m²)</label>
+            <input type="number" id="area_privativa_apartamento" name="area_privativa_apartamento" required>
+        </div>
+        
+        <div class="form-group">
+            <label for="quartos_apartamento">Quartos</label>
+            <input type="number" id="quartos_apartamento" name="quartos_apartamento" required>
+        </div>
+        
+        <div class="form-group">
+            <label for="suites_apartamento">Suítes</label>
+            <input type="number" id="suites_apartamento" name="suites_apartamento" required>
+        </div>
+        
+        <div class="form-group">
+            <label for="banheiros_apartamento">Banheiros</label>
+            <input type="number" id="banheiros_apartamento" name="banheiros_apartamento" required>
+        </div>
+        
+        <div class="form-group">
+            <label for="vagas_garagem_apartamento">Vagas de Garagem</label>
+            <input type="number" id="vagas_garagem_apartamento" name="vagas_garagem_apartamento" required>
+        </div>
+        
+        <div class="form-group">
+            <label for="tipo_garagem_apartamento">Tipo de Garagem</label>
+            <select id="tipo_garagem_apartamento" name="tipo_garagem_apartamento">
+                <option value="Coberta">Coberta</option>
+                <option value="Descoberta">Descoberta</option>
+                <option value="Subsolo">Subsolo</option>
+            </select>
+        </div>
+        
+        <div class="form-group">
+            <label for="sacada_varanda_apartamento">Sacada/Varanda</label>
+            <select id="sacada_varanda_apartamento" name="sacada_varanda_apartamento">
+                <option value="true">Sim</option>
+                <option value="false">Não</option>
+            </select>
+        </div>
+        
+        <div class="form-group">
+            <label for="caracteristicas_apartamento">Características (separadas por vírgula)</label>
+            <input type="text" id="caracteristicas_apartamento" name="caracteristicas_apartamento" 
+                   placeholder="Ex: Piso laminado, Armários planejados, Vista para o parque">
+        </div>
+        
+        <div class="form-group">
+            <label for="valor_venda_apartamento">Valor de Venda (R$)</label>
+            <input type="number" id="valor_venda_apartamento" name="valor_venda_apartamento" required>
+        </div>
+        
+        <div class="form-group">
+            <label for="titulo_descritivo_apartamento">Título Descritivo</label>
+            <input type="text" id="titulo_descritivo_apartamento" name="titulo_descritivo_apartamento" required>
+        </div>
+        
+        <div class="form-group">
+            <label for="descricao_apartamento">Descrição</label>
+            <textarea id="descricao_apartamento" name="descricao_apartamento" required></textarea>
+        </div>
+        
+        <div class="form-group">
+            <label for="status_publicacao_apartamento">Status de Publicação</label>
+            <select id="status_publicacao_apartamento" name="status_publicacao_apartamento">
+                <option value="Ativo">Ativo</option>
+                <option value="Pausado">Pausado</option>
+                <option value="Desativado">Desativado</option>
+            </select>
+        </div>
+        
+        <button type="submit">Cadastrar Apartamento</button>
+    </form>
+    
+    <div class="result" id="result" style="display: none;">
+        <h3>Resultado</h3>
+        <pre id="result-data"></pre>
+    </div>
+    
+    <script>
+        document.getElementById('apartment-form').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            
+            const resultDiv = document.getElementById('result');
+            const resultData = document.getElementById('result-data');
+            
+            // Limpar resultados anteriores
+            resultDiv.className = 'result';
+            resultDiv.style.display = 'none';
+            
+            try {
+                // Coletar dados do formulário
+                const formData = new FormData(this);
+                const data = {};
+                
+                for (const [key, value] of formData.entries()) {
+                    // Converter números
+                    if (['id_empreendimento', 'area_privativa_apartamento', 'quartos_apartamento', 
+                         'suites_apartamento', 'banheiros_apartamento', 'vagas_garagem_apartamento',
+                         'valor_venda_apartamento'].includes(key)) {
+                        data[key] = Number(value);
+                    } 
+                    // Converter booleanos
+                    else if (key === 'sacada_varanda_apartamento') {
+                        data[key] = value === 'true';
+                    }
+                    // Processar características como array
+                    else if (key === 'caracteristicas_apartamento') {
+                        if (value.trim()) {
+                            data[key] = value.split(',').map(item => item.trim());
+                        } else {
+                            data[key] = [];
+                        }
+                    }
+                    // Demais campos como string
+                    else {
+                        data[key] = value;
+                    }
+                }
+                
+                // Enviar para API
+                const response = await fetch('/api/apartamentos', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(data)
+                });
+                
+                const responseData = await response.json();
+                
+                // Exibir resultado
+                resultDiv.style.display = 'block';
+                if (response.ok) {
+                    resultDiv.classList.add('success');
+                    resultData.textContent = JSON.stringify(responseData, null, 2);
+                } else {
+                    resultDiv.classList.add('error');
+                    resultData.textContent = JSON.stringify(responseData, null, 2);
+                }
+            } catch (error) {
+                resultDiv.style.display = 'block';
+                resultDiv.classList.add('error');
+                resultData.textContent = `Erro: ${error.message}`;
+            }
+        });
+    </script>
+</body>
+</html>

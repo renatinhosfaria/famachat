@@ -1,0 +1,35 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply font-sans antialiased bg-background text-foreground;
+  }
+}
+
+@layer utilities {
+  /* Estilização da barra de rolagem */
+  .scrollbar-thin::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  
+  .scrollbar-thumb-gray-400::-webkit-scrollbar-thumb {
+    background-color: #a1a1aa;
+    border-radius: 4px;
+  }
+  
+  .scrollbar-thumb-gray-400::-webkit-scrollbar-thumb:hover {
+    background-color: #71717a;
+  }
+  
+  .scrollbar-track-gray-100::-webkit-scrollbar-track {
+    background-color: #f3f4f6;
+    border-radius: 4px;
+  }
+}
