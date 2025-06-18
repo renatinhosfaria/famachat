@@ -5,26 +5,77 @@
 # Stage 1: Build dependencies and frontend
 FROM node:20-alpine AS builder
 
+# Install comprehensive system dependencies for all native modules
+RUN apk add --no-cache \
+    python3 \
+    py3-pip \
+    make \
+    g++ \
+    gcc \
+    musl-dev \
+    linux-headers \
+    libc6-compat \
+    git \
+    openssh \
+    pkgconfig \
+    pixman-dev \
+    cairo-dev \
+    pango-dev \
+    jpeg-dev \
+    giflib-dev \
+    librsvg-dev \
+    && rm -rf /var/cache/apk/*
+
+# Set npm configuration for better native module compilation
+RUN npm config set python python3 && \
+    npm config set build-from-source true
+
 WORKDIR /app
 
-# Install dependencies (including dev dependencies for build)
+# Copy package files
 COPY package*.json ./
-RUN npm ci && npm cache clean --force
 
-# Copy source code
+# Clear npm cache and install with comprehensive dependency inclusion
+RUN npm cache clean --force && \
+    npm install --verbose --no-audit --include=dev --include=optional --fund=false
+
+# Copy all source code
 COPY . .
 
-# Build frontend and backend
-RUN npm run build
+# Set NODE_ENV for build
+ENV NODE_ENV=production
+
+# Build frontend and backend with extended timeout
+RUN npm run build --timeout=300000
+
+# Verify build outputs exist and show structure
+RUN echo "Build verification:" && \
+    ls -la dist/ && \
+    echo "Client build:" && \
+    ls -la client/dist/ && \
+    echo "Build completed successfully"
 
 # Stage 2: Production runtime
 FROM node:20-alpine AS runtime
 
-# Install security updates and required packages
+# Install essential runtime dependencies for native modules
 RUN apk update && apk upgrade && \
     apk add --no-cache \
     dumb-init \
+    python3 \
+    make \
+    g++ \
+    gcc \
+    musl-dev \
+    libc6-compat \
+    curl \
+    wget \
+    ca-certificates \
+    tzdata \
     && rm -rf /var/cache/apk/*
+
+# Set timezone
+ENV TZ=America/Sao_Paulo
 
 # Create app user for security
 RUN addgroup -g 1001 -S nodejs && \
@@ -32,14 +83,20 @@ RUN addgroup -g 1001 -S nodejs && \
 
 WORKDIR /app
 
-# Copy package.json and install only production dependencies
+# Copy package files and install production dependencies
 COPY --from=builder --chown=famachat:nodejs /app/package*.json ./
-RUN npm ci --only=production && npm cache clean --force
 
-# Copy built application from builder stage
+# Install production dependencies with native module support
+RUN npm config set python python3 && \
+    npm ci --only=production --include=optional --verbose && \
+    npm cache clean --force
+
+# Copy built application and essential runtime files
 COPY --from=builder --chown=famachat:nodejs /app/dist ./dist
 COPY --from=builder --chown=famachat:nodejs /app/client/dist ./client/dist
 COPY --from=builder --chown=famachat:nodejs /app/drizzle.config.ts ./
+COPY --from=builder --chown=famachat:nodejs /app/shared ./shared
+COPY --from=builder --chown=famachat:nodejs /app/public ./public
 
 # Create required directories
 RUN mkdir -p /app/server/uploads && \
