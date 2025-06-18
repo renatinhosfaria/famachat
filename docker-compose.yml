@@ -1,5 +1,5 @@
 # ==============================================
-# FAMACHAT - DOCKER COMPOSE STANDALONE
+# FAMACHAT - DOCKER COMPOSE PRODUCTION
 # ==============================================
 version: '3.8'
 
@@ -21,7 +21,7 @@ services:
     ports:
       - "5432:5432"
     networks:
-      - network_public
+      - famachat-network
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d famachat"]
       interval: 30s
@@ -47,7 +47,7 @@ services:
     ports:
       - "6379:6379"
     networks:
-      - network_public
+      - famachat-network
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 30s
@@ -125,11 +125,12 @@ services:
     ports:
       - "5000:5000"
     networks:
-      - network_public
+      - famachat-network
+      - traefik
     labels:
       # Traefik Configuration
       - "traefik.enable=true"
-      - "traefik.docker.network=network_public"
+      - "traefik.docker.network=traefik"
       
       # HTTP Router
       - "traefik.http.routers.famachat.rule=Host(`${DOMAIN:-famachat.seudominio.com}`)"
@@ -178,7 +179,7 @@ services:
       - backup_data:/backup
       - ./scripts/backup.sh:/backup.sh:ro
     networks:
-      - network_public
+      - famachat-network
     command: >
       sh -c "
         while ! pg_isready -h postgres -U postgres; do
@@ -196,9 +197,12 @@ services:
 # NETWORKS
 # ==============================================
 networks:
-  network_public:
-    name: network_public
+  famachat-network:
+    driver: bridge
+    name: famachat-network
+  traefik:
     external: true
+    name: traefik
 
 # ==============================================
 # VOLUMES
