@@ -1,9 +1,32 @@
 # ==============================================
-# FAMACHAT - EXTERNAL DATABASE VERSION
+# FAMACHAT - DOCKER COMPOSE STANDALONE
 # ==============================================
 version: '3.8'
 
 services:
+  # ==============================================
+  # POSTGRESQL DATABASE
+  # ==============================================
+  postgres:
+    image: postgres:16-alpine
+    container_name: famachat-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: famachat
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${PGPASSWORD:-IwOLgVnyOfbN}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    networks:
+      - network_public
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d famachat"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
   # ==============================================
   # REDIS CACHE & SESSIONS
   # ==============================================
@@ -11,13 +34,13 @@ services:
     image: redis:7-alpine
     container_name: famachat-redis
     restart: unless-stopped
-    command: redis-server --appendonly yes --maxmemory 512mb --maxmemory-policy allkeys-lru
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
     volumes:
       - redis_data:/data
     ports:
       - "6379:6379"
     networks:
-      - famachat-network
+      - network_public
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 30s
@@ -28,89 +51,100 @@ services:
   # FAMACHAT APPLICATION
   # ==============================================
   famachat:
-    build:
-      context: .
-      dockerfile: Dockerfile
+    image: ${REGISTRY:-famachat}:latest
     container_name: famachat-app
     restart: unless-stopped
     depends_on:
+      postgres:
+        condition: service_healthy
       redis:
         condition: service_healthy
     environment:
-      # Application
       NODE_ENV: production
       PORT: 5000
-      APP_URL: https://${DOMAIN:-www.famachat.com.br}
-      
-      # Database - Using external PostgreSQL
-      DATABASE_URL: postgresql://postgres:${PGPASSWORD:-IwOLgVnyOfbN}@host.docker.internal:5432/famachat
-      PGHOST: host.docker.internal
+      APP_URL: https://${DOMAIN:-famachat.seudominio.com}
+      DATABASE_URL: postgresql://postgres:${PGPASSWORD:-IwOLgVnyOfbN}@postgres:5432/famachat
+      PGHOST: postgres
       PGPORT: 5432
       PGDATABASE: famachat
       PGUSER: postgres
       PGPASSWORD: ${PGPASSWORD:-IwOLgVnyOfbN}
-      
-      # Redis
       REDIS_URL: redis://redis:6379
       REDIS_HOST: redis
       REDIS_PORT: 6379
       REDIS_PASSWORD: ""
       REDIS_DB: 0
-      
-      # Security
       SESSION_SECRET: ${SESSION_SECRET:-EuCIxyXv8hgm64fhG2U8ytC3NoH59jsPxWaqwYFttMJI0mSNlSG1W73jbh2zu4+yUHLPecyaC5UMikeWz2B8qw==}
       JWT_SECRET: ${JWT_SECRET:-FamaChat2024SecretKeyForJWTTokenGeneration123456789}
-      BCRYPT_ROUNDS: 12
-      
-      # External APIs
       EVOLUTION_API_URL: ${EVOLUTION_API_URL:-https://evolution.famachat.com.br}
       EVOLUTION_API_KEY: ${EVOLUTION_API_KEY:-IwOLgVnyOfbN}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-your_openai_api_key}
       GOOGLE_MAPS_API_KEY: ${GOOGLE_MAPS_API_KEY:-AIzaSyAzqIdg1EKaI8cmb2W4iC6NfJs_D8vgEYY}
-      
-      # Facebook
       FACEBOOK_APP_ID: ${FACEBOOK_APP_ID:-1600246764019855}
       FACEBOOK_APP_SECRET: ${FACEBOOK_APP_SECRET:-1600246764019855}
       FACEBOOK_PAGE_TOKEN: ${FACEBOOK_PAGE_TOKEN:-711015865662935}
-      
-      # Rate Limiting
-      RATE_LIMIT_WINDOW_MS: 900000
-      RATE_LIMIT_MAX_REQUESTS: 100
-      REQUEST_SIZE_LIMIT: 50mb
-      URL_ENCODED_LIMIT: 50mb
-      JSON_LIMIT: 10mb
-      
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
     volumes:
       - uploads_data:/app/server/uploads
       - logs_data:/app/logs
     ports:
-      - "80:5000"
       - "5000:5000"
     networks:
-      - famachat-network
+      - network_public
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:5000/api/system/health"]
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:5000/api/system/health', (res) => process.exit(res.statusCode === 200 ? 0 : 1))"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 60s
 
+  # ==============================================
+  # BACKUP SERVICE (PROFILE)
+  # ==============================================
+  backup:
+    image: postgres:16-alpine
+    container_name: famachat-backup
+    restart: "no"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PGHOST: postgres
+      PGPORT: 5432
+      PGDATABASE: famachat
+      PGUSER: postgres
+      PGPASSWORD: ${PGPASSWORD:-IwOLgVnyOfbN}
+    volumes:
+      - backup_data:/backup
+      - ./scripts/backup.sh:/backup.sh:ro
+    networks:
+      - network_public
+    command: >
+      sh -c "
+        while ! pg_isready -h postgres -U postgres; do
+          echo 'Aguardando PostgreSQL...'
+          sleep 2
+        done
+        echo 'PostgreSQL disponível, iniciando backup...'
+        /backup.sh
+        echo 'Backup concluído'
+      "
+    profiles:
+      - backup
+
 # ==============================================
 # NETWORKS
 # ==============================================
 networks:
-  famachat-network:
-    driver: bridge
+  network_public:
+    name: network_public
+    external: true
 
 # ==============================================
 # VOLUMES
 # ==============================================
 volumes:
+  postgres_data:
   redis_data:
-    driver: local
   uploads_data:
-    driver: local
   logs_data:
-    driver: local
+  backup_data:

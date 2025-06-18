@@ -61,14 +61,6 @@ fi
 if ! docker network ls | grep -q "traefik"; then
     print_warning "Rede Traefik não encontrada. Criando rede..."
     docker network create traefik
-    print_status "Rede Traefik criada ✅"
-fi
-
-# Check if running in Docker Swarm mode
-if docker info --format '{{.Swarm.LocalNodeState}}' | grep -q "active"; then
-    print_warning "Docker Swarm detectado. Desabilitando modo swarm para usar docker-compose..."
-    docker swarm leave --force 2>/dev/null || true
-    print_status "Modo swarm desabilitado ✅"
 fi
 
 print_status "Pré-requisitos verificados ✅"
@@ -163,22 +155,22 @@ print_status "Construindo e iniciando serviços..."
 
 # Stop existing services
 print_status "Parando serviços existentes..."
-docker-compose -f docker-compose.production.yml down 2>/dev/null || true
+docker-compose down 2>/dev/null || true
 
 # Remove old images (optional)
 read -p "Remover imagens antigas do Docker? (y/N): " -n 1 -r
 echo
 if [[ $REPLY =~ ^[Yy]$ ]]; then
     print_status "Removendo imagens antigas..."
-    docker-compose -f docker-compose.production.yml down --rmi all --volumes --remove-orphans 2>/dev/null || true
+    docker-compose down --rmi all --volumes --remove-orphans 2>/dev/null || true
 fi
 
 # Build and start services
 print_status "Construindo aplicação..."
-docker-compose -f docker-compose.production.yml build --no-cache
+docker-compose build --no-cache
 
 print_status "Iniciando serviços..."
-docker-compose -f docker-compose.production.yml up -d
+docker-compose up -d
 
 # ==============================================
 # HEALTH CHECKS
@@ -189,7 +181,7 @@ print_status "Aguardando serviços ficarem prontos..."
 # Wait for PostgreSQL
 print_status "Aguardando PostgreSQL..."
 timeout=60
-while ! docker-compose -f docker-compose.production.yml exec postgres pg_isready -U postgres >/dev/null 2>&1; do
+while ! docker-compose exec postgres pg_isready -U postgres >/dev/null 2>&1; do
     sleep 2
     timeout=$((timeout - 2))
     if [ $timeout -le 0 ]; then
@@ -201,7 +193,7 @@ done
 # Wait for Redis
 print_status "Aguardando Redis..."
 timeout=30
-while ! docker-compose -f docker-compose.production.yml exec redis redis-cli ping >/dev/null 2>&1; do
+while ! docker-compose exec redis redis-cli ping >/dev/null 2>&1; do
     sleep 2
     timeout=$((timeout - 2))
     if [ $timeout -le 0 ]; then
@@ -219,7 +211,7 @@ while ! curl -f http://localhost:5000/api/system/health >/dev/null 2>&1; do
     if [ $timeout -le 0 ]; then
         print_error "Aplicação não respondeu a tempo"
         print_error "Verificando logs..."
-        docker-compose -f docker-compose.production.yml logs famachat --tail=20
+        docker-compose logs famachat --tail=20
         exit 1
     fi
 done
@@ -229,7 +221,7 @@ done
 # ==============================================
 
 print_status "Executando migrações do banco de dados..."
-docker-compose -f docker-compose.production.yml exec famachat npm run db:push
+docker-compose exec famachat npm run db:push
 
 # ==============================================
 # FINAL VERIFICATION
@@ -238,7 +230,7 @@ docker-compose -f docker-compose.production.yml exec famachat npm run db:push
 print_status "Verificando status dos serviços..."
 
 # Check service status
-docker-compose -f docker-compose.production.yml ps
+docker-compose ps
 
 print_status "Verificando conectividade..."
 
@@ -263,10 +255,10 @@ echo "   • PostgreSQL: localhost:5432"
 echo "   • Redis: localhost:6379"
 echo ""
 echo "🔧 Comandos úteis:"
-echo "   • Ver logs: docker-compose -f docker-compose.production.yml logs -f"
-echo "   • Parar serviços: docker-compose -f docker-compose.production.yml down"
-echo "   • Reiniciar: docker-compose -f docker-compose.production.yml restart"
-echo "   • Backup: docker-compose -f docker-compose.production.yml run --rm backup"
+echo "   • Ver logs: docker-compose logs -f"
+echo "   • Parar serviços: docker-compose down"
+echo "   • Reiniciar: docker-compose restart"
+echo "   • Backup: docker-compose run --rm backup"
 echo ""
 echo "⚠️  Lembre-se de:"
 echo "   • Configurar DNS do domínio $DOMAIN para este servidor"
