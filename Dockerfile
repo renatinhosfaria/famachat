@@ -42,6 +42,9 @@ RUN npm cache clean --force && \
 # Copy all source code
 COPY . .
 
+# Re-install dependencies to ensure all modules are available for build
+RUN npm install --verbose --no-audit --include=dev --include=optional --fund=false
+
 # Set NODE_ENV for build
 ENV NODE_ENV=production
 
@@ -91,16 +94,25 @@ RUN npm config set python python3 && \
     npm ci --only=production --include=optional --verbose && \
     npm cache clean --force
 
-# Copy built application and essential runtime files
+# Copy built application and ALL required runtime files
 COPY --from=builder --chown=famachat:nodejs /app/dist ./dist
 COPY --from=builder --chown=famachat:nodejs /app/client/dist ./client/dist
 COPY --from=builder --chown=famachat:nodejs /app/drizzle.config.ts ./
 COPY --from=builder --chown=famachat:nodejs /app/shared ./shared
 COPY --from=builder --chown=famachat:nodejs /app/public ./public
+COPY --from=builder --chown=famachat:nodejs /app/server ./server
+COPY --from=builder --chown=famachat:nodejs /app/scripts ./scripts
+COPY --from=builder --chown=famachat:nodejs /app/uploads ./uploads
+COPY --from=builder --chown=famachat:nodejs /app/.env.production ./.env
+COPY --from=builder --chown=famachat:nodejs /app/tsconfig.json ./
+COPY --from=builder --chown=famachat:nodejs /app/tailwind.config.ts ./
+COPY --from=builder --chown=famachat:nodejs /app/postcss.config.js ./
+COPY --from=builder --chown=famachat:nodejs /app/theme.json ./
+COPY --from=builder --chown=famachat:nodejs /app/vite.config.ts ./
 
-# Create required directories
-RUN mkdir -p /app/server/uploads && \
-    chown -R famachat:nodejs /app/server/uploads
+# Create required directories and set permissions
+RUN mkdir -p /app/server/uploads /app/logs /app/uploads && \
+    chown -R famachat:nodejs /app/server/uploads /app/logs /app/uploads
 
 # Switch to non-root user
 USER famachat

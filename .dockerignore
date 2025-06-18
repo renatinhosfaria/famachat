@@ -82,17 +82,19 @@ tmp
 temp
 
 # Large upload files (will be persisted via volumes)
-server/uploads
-uploads
+# Note: uploads directory structure needs to exist in container
+# server/uploads
+# uploads
 
 # Documentation
 README.md
 DEPLOYMENT.md
 *.md
 
-# Scripts
+# Scripts (except required runtime scripts)
 deploy.sh
-scripts/
+network-setup.sh
+build-verification.sh
 init-scripts/
 
 # Test files
