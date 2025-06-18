@@ -90,7 +90,7 @@ services:
       labels:
         # Traefik Configuration
         - "traefik.enable=true"
-        - "traefik.docker.network=traefik"
+        - "traefik.docker.network=network_public"
         
         # HTTP Router
         - "traefik.http.routers.famachat.rule=Host(`${DOMAIN:-famachat.seudominio.com}`)"
@@ -149,7 +149,7 @@ services:
       - logs_data:/app/logs
     networks:
       - famachat-network
-      - traefik
+      - network_public
     healthcheck:
       test: ["CMD", "node", "-e", "require('http').get('http://localhost:5000/api/system/health', (res) => process.exit(res.statusCode === 200 ? 0 : 1))"]
       interval: 30s
@@ -164,9 +164,9 @@ networks:
   famachat-network:
     driver: overlay
     attachable: true
-  traefik:
+  network_public:
     external: true
-    name: traefik
+    name: network_public
 
 # ==============================================
 # VOLUMES

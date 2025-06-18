@@ -103,9 +103,9 @@ services:
 # NETWORKS
 # ==============================================
 networks:
-  famachat-network:
-    driver: bridge
-    name: famachat-network
+  network_public:
+    name: network_public
+    external: true
 
 # ==============================================
 # VOLUMES

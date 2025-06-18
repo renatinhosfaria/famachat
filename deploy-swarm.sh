@@ -58,10 +58,12 @@ fi
 
 print_status "Configurando redes..."
 
-# Create overlay network for traefik if it doesn't exist
-if ! docker network ls | grep -q "traefik"; then
-    print_status "Criando rede overlay traefik..."
-    docker network create --driver overlay traefik
+# Check if network_public exists
+if ! docker network ls | grep -q "network_public"; then
+    print_warning "Rede network_public não encontrada. Criando..."
+    docker network create --driver overlay network_public
+else
+    print_status "Rede network_public encontrada"
 fi
 
 # ==============================================
