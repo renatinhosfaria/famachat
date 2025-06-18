@@ -70,7 +70,7 @@ export default function Layout({ children }: LayoutProps) {
         />
         
         {/* Page content */}
-        <main className="flex-1 overflow-y-auto bg-background-light p-4 sm:p-6 lg:p-8 pb-20 md:pb-8">
+        <main className="flex-1 overflow-y-auto bg-gray-50 p-4 sm:p-6 lg:p-8 pb-20 md:pb-8">
           {children}
         </main>
         
