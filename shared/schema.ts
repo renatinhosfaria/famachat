@@ -713,3 +713,12 @@ export const facebookConfig = sistemaFacebookConfig;
 export const leadAutomationConfig = sistemaConfigAutomacaoLeads;
 export const insertLeadSchema = insertSistemaLeadSchema;
 export const updateLeadSchema = insertSistemaLeadSchema.partial();
+
+// Create the missing lead automation config schema
+export const insertLeadAutomationConfigSchema = createInsertSchema(sistemaConfigAutomacaoLeads).omit({ 
+  id: true, 
+  createdAt: true, 
+  updatedAt: true 
+});
+
+export const updateLeadAutomationConfigSchema = insertLeadAutomationConfigSchema.partial();
