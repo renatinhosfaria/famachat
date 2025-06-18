@@ -57,11 +57,38 @@ if ! command -v docker-compose &> /dev/null; then
     exit 1
 fi
 
+# Check and create required Docker networks
+print_status "Verificando redes Docker..."
+
 # Check if Traefik network exists
 if ! docker network ls | grep -q "traefik"; then
     print_warning "Rede Traefik não encontrada. Criando rede..."
-    docker network create traefik
+    if docker network create traefik --driver bridge; then
+        print_status "Rede Traefik criada com sucesso"
+    else
+        print_error "Falha ao criar rede Traefik"
+        exit 1
+    fi
+else
+    print_status "Rede Traefik já existe"
 fi
+
+# Check if network_public network exists
+if ! docker network ls | grep -q "network_public"; then
+    print_warning "Rede network_public não encontrada. Criando rede..."
+    if docker network create network_public --driver bridge; then
+        print_status "Rede network_public criada com sucesso"
+    else
+        print_error "Falha ao criar rede network_public"
+        exit 1
+    fi
+else
+    print_status "Rede network_public já existe"
+fi
+
+# List all networks for verification
+print_status "Redes Docker disponíveis:"
+docker network ls
 
 print_status "Pré-requisitos verificados ✅"
 
@@ -259,11 +286,13 @@ echo "   • Ver logs: docker-compose -f docker-compose.production.yml logs -f"
 echo "   • Parar serviços: docker-compose -f docker-compose.production.yml down"
 echo "   • Reiniciar: docker-compose -f docker-compose.production.yml restart"
 echo "   • Backup: docker-compose -f docker-compose.production.yml run --rm backup"
+echo "   • Verificar redes: ./network-setup.sh"
 echo ""
 echo "⚠️  Lembre-se de:"
 echo "   • Configurar DNS do domínio $DOMAIN para este servidor"
 echo "   • Verificar se Traefik está configurado com SSL"
 echo "   • Configurar backups automáticos"
+echo "   • As redes 'traefik' e 'network_public' foram criadas automaticamente"
 echo ""
 echo "🌐 Acesso:"
 echo "   • Local: http://localhost:5000"

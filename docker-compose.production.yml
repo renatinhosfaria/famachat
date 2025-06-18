@@ -133,6 +133,7 @@ services:
     networks:
       - famachat-network
       - traefik
+      - network_public
     labels:
       # Traefik Configuration
       - "traefik.enable=true"
@@ -190,6 +191,9 @@ networks:
   traefik:
     external: true
     name: traefik
+  network_public:
+    external: true
+    name: network_public
 
 # ==============================================
 # VOLUMES
