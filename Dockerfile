@@ -32,11 +32,13 @@ RUN addgroup -g 1001 -S nodejs && \
 
 WORKDIR /app
 
+# Copy package.json and install only production dependencies
+COPY --from=builder --chown=famachat:nodejs /app/package*.json ./
+RUN npm ci --only=production && npm cache clean --force
+
 # Copy built application from builder stage
 COPY --from=builder --chown=famachat:nodejs /app/dist ./dist
 COPY --from=builder --chown=famachat:nodejs /app/client/dist ./client/dist
-COPY --from=builder --chown=famachat:nodejs /app/node_modules ./node_modules
-COPY --from=builder --chown=famachat:nodejs /app/package*.json ./
 COPY --from=builder --chown=famachat:nodejs /app/drizzle.config.ts ./
 
 # Create required directories
