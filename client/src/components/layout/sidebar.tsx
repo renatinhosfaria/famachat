@@ -61,6 +61,16 @@ export default function Sidebar({ className, collapsed = false }: SidebarProps) 
             icon: LucideUsers,
           },
           {
+            name: "Imóveis",
+            href: "/imoveis",
+            icon: LucideHome,
+          },
+          {
+            name: "Agenda",
+            href: "/agenda",
+            icon: LucideCalendar,
+          },
+          {
             name: "Metas",
             href: "/metas",
             icon: LucideFileBarChart,
@@ -89,8 +99,7 @@ export default function Sidebar({ className, collapsed = false }: SidebarProps) 
             name: "Webhook",
             href: "/webhook",
             icon: LucideSettings,
-          },
-          ...sharedItems
+          }
         ];
       
       case 'Central de Atendimento':
@@ -161,63 +170,29 @@ export default function Sidebar({ className, collapsed = false }: SidebarProps) 
 
 
   return (
-    <div className={cn("flex flex-col h-full bg-white border-r shadow-sm", className)}>
+    <div className={cn("flex flex-col h-full bg-white", className)}>
       {/* Logo e título */}
-      <div className="flex items-center justify-center p-4 border-b border-gray-200">
-        {!collapsed ? (
-          <div className="flex items-center space-x-2">
-            <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center">
-              <span className="text-white font-bold text-sm">F</span>
-            </div>
-            <span className="font-bold text-lg text-gray-800">Fama Imóveis</span>
-          </div>
-        ) : (
-          <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center">
-            <span className="text-white font-bold text-sm">F</span>
-          </div>
-        )}
-      </div>
+      <div className="flex items-center justify-between p-4 border-b">
+        {!collapsed && <span className="font-semibold text-lg">Sistema</span>}
+        </div>
         
       {/* Menu de navegação */}
-      <nav className="flex-1 overflow-y-auto py-4 px-3">
+      <nav className="flex-1 overflow-y-auto py-4">
         <ul className="space-y-1">
           {navItems.map((item) => (
             <li key={item.href}>
-              {collapsed ? (
-                <TooltipProvider>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Link
-                        href={item.href}
-                        className={cn(
-                          "flex items-center justify-center w-12 h-12 text-sm font-medium rounded-lg transition-all duration-200",
-                          location === item.href
-                            ? "bg-primary text-white shadow-md"
-                            : "text-gray-600 hover:bg-gray-100 hover:text-gray-900"
-                        )}
-                      >
-                        <item.icon className="h-5 w-5" />
-                      </Link>
-                    </TooltipTrigger>
-                    <TooltipContent side="right">
-                      {item.name}
-                    </TooltipContent>
-                  </Tooltip>
-                </TooltipProvider>
-              ) : (
-                <Link
-                  href={item.href}
-                  className={cn(
-                    "flex items-center px-4 py-3 text-sm font-medium rounded-lg transition-all duration-200",
-                    location === item.href
-                      ? "bg-primary text-white shadow-md"
-                      : "text-gray-600 hover:bg-gray-100 hover:text-gray-900"
-                  )}
-                >
-                  <item.icon className="h-5 w-5" />
-                  <span className="ml-3">{item.name}</span>
-                </Link>
-              )}
+                        <Link
+                          href={item.href}
+                          className={cn(
+                  "flex items-center px-4 py-2 text-sm font-medium rounded-md",
+                            location === item.href
+                              ? "bg-primary text-white"
+                    : "text-gray-600 hover:bg-gray-50"
+                          )}
+                        >
+                          <item.icon className="h-5 w-5" />
+                {!collapsed && <span className="ml-3">{item.name}</span>}
+                        </Link>
             </li>
           ))}
         </ul>
