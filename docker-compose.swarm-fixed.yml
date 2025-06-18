@@ -1,5 +1,5 @@
 # ==============================================
-# FAMACHAT - DOCKER SWARM MODE
+# FAMACHAT - DOCKER SWARM (FIXED)
 # ==============================================
 version: '3.8'
 
@@ -30,7 +30,7 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
     networks:
-      - famachat-network
+      - backend
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d famachat"]
       interval: 30s
@@ -57,7 +57,7 @@ services:
     volumes:
       - redis_data:/data
     networks:
-      - famachat-network
+      - backend
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 30s
@@ -68,7 +68,7 @@ services:
   # FAMACHAT APPLICATION
   # ==============================================
   famachat:
-    image: ${REGISTRY:-renatinhosfaria}/famachat:latest
+    image: ${REGISTRY:-famachat}:latest
     deploy:
       replicas: 2
       restart_policy:
@@ -88,59 +88,39 @@ services:
         parallelism: 1
         delay: 5s
       labels:
-        # Traefik Configuration
         - "traefik.enable=true"
         - "traefik.docker.network=network_public"
-        
-        # HTTP Router
         - "traefik.http.routers.famachat.rule=Host(`${DOMAIN:-famachat.seudominio.com}`)"
         - "traefik.http.routers.famachat.entrypoints=websecure"
         - "traefik.http.routers.famachat.tls.certresolver=letsencrypt"
-        
-        # Service
         - "traefik.http.services.famachat.loadbalancer.server.port=5000"
-        
-        # Middleware
         - "traefik.http.routers.famachat.middlewares=famachat-headers"
         - "traefik.http.middlewares.famachat-headers.headers.customrequestheaders.X-Forwarded-Proto=https"
-        
-        # HTTP to HTTPS Redirect
         - "traefik.http.routers.famachat-http.rule=Host(`${DOMAIN:-famachat.seudominio.com}`)"
         - "traefik.http.routers.famachat-http.entrypoints=web"
         - "traefik.http.routers.famachat-http.middlewares=redirect-to-https"
         - "traefik.http.middlewares.redirect-to-https.redirectscheme.scheme=https"
     environment:
-      # Application
       NODE_ENV: production
       PORT: 5000
       APP_URL: https://${DOMAIN:-famachat.seudominio.com}
-      
-      # Database
       DATABASE_URL: postgresql://postgres:${PGPASSWORD:-IwOLgVnyOfbN}@postgres:5432/famachat
       PGHOST: postgres
       PGPORT: 5432
       PGDATABASE: famachat
       PGUSER: postgres
       PGPASSWORD: ${PGPASSWORD:-IwOLgVnyOfbN}
-      
-      # Redis
       REDIS_URL: redis://redis:6379
       REDIS_HOST: redis
       REDIS_PORT: 6379
       REDIS_PASSWORD: ""
       REDIS_DB: 0
-      
-      # Security
       SESSION_SECRET: ${SESSION_SECRET:-EuCIxyXv8hgm64fhG2U8ytC3NoH59jsPxWaqwYFttMJI0mSNlSG1W73jbh2zu4+yUHLPecyaC5UMikeWz2B8qw==}
       JWT_SECRET: ${JWT_SECRET:-FamaChat2024SecretKeyForJWTTokenGeneration123456789}
-      
-      # APIs
       EVOLUTION_API_URL: ${EVOLUTION_API_URL:-https://evolution.famachat.com.br}
       EVOLUTION_API_KEY: ${EVOLUTION_API_KEY:-IwOLgVnyOfbN}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-your_openai_api_key}
       GOOGLE_MAPS_API_KEY: ${GOOGLE_MAPS_API_KEY:-AIzaSyAzqIdg1EKaI8cmb2W4iC6NfJs_D8vgEYY}
-      
-      # Facebook
       FACEBOOK_APP_ID: ${FACEBOOK_APP_ID:-1600246764019855}
       FACEBOOK_APP_SECRET: ${FACEBOOK_APP_SECRET:-1600246764019855}
       FACEBOOK_PAGE_TOKEN: ${FACEBOOK_PAGE_TOKEN:-711015865662935}
@@ -148,7 +128,7 @@ services:
       - uploads_data:/app/server/uploads
       - logs_data:/app/logs
     networks:
-      - famachat-network
+      - backend
       - network_public
     healthcheck:
       test: ["CMD", "node", "-e", "require('http').get('http://localhost:5000/api/system/health', (res) => process.exit(res.statusCode === 200 ? 0 : 1))"]
@@ -161,23 +141,17 @@ services:
 # NETWORKS
 # ==============================================
 networks:
-  famachat-network:
+  backend:
     driver: overlay
-    name: famachat-network
     attachable: true
   network_public:
     external: true
-    name: network_public
 
 # ==============================================
 # VOLUMES
 # ==============================================
 volumes:
   postgres_data:
-    driver: local
   redis_data:
-    driver: local
   uploads_data:
-    driver: local
   logs_data:
-    driver: local

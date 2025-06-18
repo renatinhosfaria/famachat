@@ -61,9 +61,15 @@ print_status "Configurando redes..."
 # Check if network_public exists
 if ! docker network ls | grep -q "network_public"; then
     print_warning "Rede network_public não encontrada. Criando..."
-    docker network create --driver overlay network_public
+    docker network create --driver overlay --attachable network_public
 else
     print_status "Rede network_public encontrada"
+fi
+
+# Remove any existing bridge networks that might conflict
+if docker network ls | grep -q "famachat-network"; then
+    print_status "Removendo rede bridge conflitante..."
+    docker network rm famachat-network 2>/dev/null || true
 fi
 
 # ==============================================
