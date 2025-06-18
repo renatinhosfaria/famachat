@@ -23,10 +23,9 @@ export const users = pgTable("sistema_users", {
   role: text("role").notNull(), // "Gestor", "Marketing", "Consultor de Atendimento", "Corretor"
   department: text("department").notNull(), // "Gestão", "Marketing", "Atendimento", "Vendas"
   isActive: boolean("is_active").default(true),
+  whatsappInstance: text("whatsapp_instance"),
+  whatsappConnected: boolean("whatsapp_connected").default(false),
 });
-
-// Definimos as relações após definir todas as tabelas
-// As relações de usuário são definidas no final do arquivo
 
 // Enum para fonte do cliente
 export const ClienteSource = {
@@ -48,6 +47,79 @@ export const MeioContato = {
   EMAIL: "Email",
   TELEFONE: "Telefone",
   PRESENCIAL: "Presencial"
+} as const;
+
+// Enum para status do cliente
+export const ClienteStatus = {
+  SEM_ATENDIMENTO: "Sem Atendimento",
+  EM_ATENDIMENTO: "Em Atendimento", 
+  AGENDADO: "Agendado",
+  VISITOU: "Visitou",
+  VENDIDO: "Vendido",
+  PERDIDO: "Perdido",
+  CANCELADO: "Cancelado"
+} as const;
+
+// Enum para status de leads
+export const LeadStatusEnum = {
+  NOVO_LEAD: "Novo Lead",
+  EM_CONTATO: "Em Contato",
+  QUALIFICADO: "Qualificado",
+  PROPOSTA: "Proposta",
+  NEGOCIACAO: "Negociação",
+  FECHADO: "Fechado",
+  PERDIDO: "Perdido"
+} as const;
+
+// Enum para distribuição de leads
+export const DistributionMethodEnum = {
+  VOLUME: "volume",
+  ROUND_ROBIN: "round_robin",
+  WEIGHTED: "weighted"
+} as const;
+
+// Enum para roles de usuário
+export const UserRole = {
+  MANAGER: "Gestor",
+  MARKETING: "Marketing", 
+  CONSULTANT: "Consultor de Atendimento",
+  BROKER_SENIOR: "Corretor Senior",
+  EXECUTIVE: "Executivo",
+  BROKER_JUNIOR: "Corretor Junior",
+  BROKER_TRAINEE: "Corretor Trainee",
+} as const;
+
+// Enum para departamentos
+export const UserDepartment = {
+  GESTAO: "Gestão",
+  MARKETING: "Marketing",
+  ATENDIMENTO: "Atendimento", 
+  VENDAS: "Vendas"
+} as const;
+
+// Legacy compatibility exports
+export const Role = UserRole;
+export const Department = UserDepartment;
+
+// WhatsApp Instance Status Enum
+export const WhatsAppInstanceStatus = {
+  CONNECTED: "Conectado",
+  DISCONNECTED: "Desconectado",
+  CONNECTING: "Conectando",
+  DISCONNECTING: "Desconectando",
+  WAITING_QR_SCAN: "Aguardando Scan do QR Code",
+  FAILED: "Falha",
+  PENDING: "Pendente",
+  ERROR: "Erro",
+} as const;
+
+// Mapeamento de status da Evolution API para nosso sistema
+export const EvolutionAPIStatusMapping = {
+  "open": WhatsAppInstanceStatus.CONNECTED,
+  "connected": WhatsAppInstanceStatus.CONNECTED,
+  "close": WhatsAppInstanceStatus.DISCONNECTED,
+  "disconnected": WhatsAppInstanceStatus.DISCONNECTED,
+  "connecting": WhatsAppInstanceStatus.CONNECTING,
 } as const;
 
 // Cliente model (antigo Lead)
@@ -155,21 +227,222 @@ export const clienteNotes = pgTable("clientes_id_anotacoes", {
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 
+// Legacy leads table (alias for sistemaLeads for compatibility)
+export const leads = pgTable("sistema_leads", {
+  id: serial("id").primaryKey(),
+  fullName: text("full_name").notNull(),
+  email: text("email"),
+  phone: text("phone").notNull(),
+  source: text("source").notNull(),
+  sourceDetails: jsonb("source_details").$type<Json>(),
+  status: text("status").default("Novo Lead"),
+  assignedTo: integer("assigned_to").references(() => users.id),
+  notes: text("notes"),
+  isRecurring: boolean("is_recurring").default(false),
+  clienteId: integer("cliente_id").references(() => clientes.id),
+  tags: jsonb("tags").$type<Json>().default([]),
+  lastActivityDate: timestamp("last_activity_date").defaultNow(),
+  score: integer("score").default(0),
+  interesse: text("interesse"),
+  budget: text("budget"),
+  metaData: jsonb("meta_data").$type<Json>().default({}),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+// Sistema de Leads (alias for compatibility)
+export const sistemaLeads = leads;
+
 // Sistema de SLA em Cascata - Múltiplos atendimentos por cliente
 export const sistemaLeadsCascata = pgTable("sistema_leads_cascata", {
   id: serial("id").primaryKey(),
   clienteId: integer("cliente_id").references(() => clientes.id).notNull(),
-  leadId: integer("lead_id").references(() => leads.id), // Referência ao lead original
-  userId: integer("user_id").references(() => users.id).notNull(), // Usuário responsável por este atendimento
-  sequencia: integer("sequencia").notNull(), // Ordem na cascata (1º, 2º, 3º atendimento)
-  status: text("status").default("Ativo"), // "Ativo", "Expirado", "Finalizado"
-  slaHoras: integer("sla_horas").default(24), // Horas de SLA para este atendimento
+  leadId: integer("lead_id").references(() => sistemaLeads.id),
+  userId: integer("user_id").references(() => users.id).notNull(),
+  sequencia: integer("sequencia").notNull(),
+  status: text("status").default("Ativo"),
+  slaHoras: integer("sla_horas").default(24),
   iniciadoEm: timestamp("iniciado_em").defaultNow(),
-  expiraEm: timestamp("expira_em").notNull(), // Data/hora de expiração do SLA
-  finalizadoEm: timestamp("finalizado_em"), // Quando foi finalizado (agendamento ou expiração)
-  motivo: text("motivo"), // "Agendamento", "SLA_Expirado", "Cancelado"
+  expiraEm: timestamp("expira_em").notNull(),
+  finalizadoEm: timestamp("finalizado_em"),
+  motivo: text("motivo"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+// Sistema de Configuração de Automação de Leads
+export const sistemaConfigAutomacaoLeads = pgTable("sistema_config_automacao_leads", {
+  id: serial("id").primaryKey(),
+  active: boolean("active").default(true),
+  name: text("name").notNull(),
+  distributionMethod: text("distribution_method").default("volume"),
+  firstContactSla: integer("first_contact_sla").default(30),
+  warningPercentage: integer("warning_percentage").default(75),
+  criticalPercentage: integer("critical_percentage").default(90),
+  autoRedistribute: boolean("auto_redistribute").default(false),
+  rotationUsers: jsonb("rotation_users").$type<Json>().default([]),
+  byName: boolean("by_name").default(true),
+  byPhone: boolean("by_phone").default(true),
+  byEmail: boolean("by_email").default(true),
+  keepSameConsultant: boolean("keep_same_consultant").default(true),
+  assignNewConsultant: boolean("assign_new_consultant").default(false),
+  cascadeSlaHours: integer("cascade_sla_hours").default(24),
+  cascadeUserOrder: jsonb("cascade_user_order").$type<Json>().default([]),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+// Sistema de Metas
+export const sistemaMetas = pgTable("sistema_metas", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").references(() => users.id).notNull(),
+  periodo: text("periodo").default("mensal"),
+  ano: integer("ano").notNull(),
+  mes: integer("mes").notNull(),
+  agendamentos: integer("agendamentos").default(0),
+  visitas: integer("visitas").default(0),
+  vendas: integer("vendas").default(0),
+  conversaoAgendamentos: integer("conversao_agendamentos").default(0),
+  conversaoVisitas: integer("conversao_visitas").default(0),
+  conversaoVendas: integer("conversao_vendas").default(0),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+// Sistema de Horários dos Usuários
+export const sistemaUsersHorarios = pgTable("sistema_users_horarios", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").references(() => users.id),
+  diaSemana: text("dia_semana").notNull(),
+  horarioInicio: time("horario_inicio").notNull(),
+  horarioFim: time("horario_fim").notNull(),
+  diaTodo: boolean("dia_todo").default(false),
+});
+
+// Sistema de Instâncias WhatsApp
+export const sistemaWhatsappInstances = pgTable("sistema_whatsapp_instances", {
+  instanciaId: text("instancia_id").primaryKey(),
+  instanceName: text("instance_name").notNull(),
+  userId: integer("user_id").references(() => users.id).notNull(),
+  instanceStatus: text("instance_status"),
+  base64: text("base64"),
+  webhook: text("webhook"),
+  remoteJid: text("remote_jid"),
+  lastConnection: timestamp("last_connection"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+// Sistema de Configuração Facebook
+export const sistemaFacebookConfig = pgTable("sistema_facebook_config", {
+  id: serial("id").primaryKey(),
+  appId: text("app_id").notNull(),
+  appSecret: text("app_secret").notNull(),
+  accessToken: text("access_token").notNull(),
+  userAccessToken: text("user_access_token"),
+  verificationToken: text("verification_token"),
+  pageId: text("page_id"),
+  adAccountId: text("ad_account_id"),
+  webhookEnabled: boolean("webhook_enabled").default(false),
+  isActive: boolean("is_active").default(true),
+  lastUpdated: timestamp("last_updated").defaultNow(),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+// Sistema de Conteúdo Diário
+export const sistemaDailyContent = pgTable("sistema_daily_content", {
+  id: serial("id").primaryKey(),
+  imageUrl: text("image_url").notNull(),
+  title: text("title").notNull(),
+  content: text("content").notNull(),
+  category: text("category").default("true"),
+  isActive: boolean("is_active").default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// Imóveis - Construtoras
+export const imoveisConstrutoras = pgTable("imoveis_construtoras", {
+  idConstrutora: serial("id_construtora").primaryKey(),
+  nomeConstrutora: text("nome_construtora").notNull(),
+  razaoSocial: text("razao_social"),
+  cpfCnpj: text("cpf_cnpj"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+// Imóveis - Contatos da Construtora
+export const imoveisContatosConstrutora = pgTable("imoveis_contatos_construtora", {
+  idContatoConstrutora: serial("id_contato_construtora").primaryKey(),
+  idConstrutora: integer("id_construtora").references(() => imoveisConstrutoras.idConstrutora),
+  nome: text("nome").notNull(),
+  telefone: text("telefone").notNull(),
+  email: text("email"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+// Imóveis - Proprietários Pessoa Física
+export const imoveisProprietariosPf = pgTable("imoveis_proprietarios_pf", {
+  idProprietarioPf: serial("id_proprietario_pf").primaryKey(),
+  nome: text("nome").notNull(),
+  telefone: text("telefone").notNull(),
+  email: text("email"),
+  cpf: text("cpf"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+// Imóveis - Empreendimentos
+export const imoveisEmpreendimentos = pgTable("imoveis_empreendimentos", {
+  idEmpreendimento: serial("id_empreendimento").primaryKey(),
+  tipoProprietario: text("tipo_proprietario"),
+  nomeProprietario: text("nome_proprietario"),
+  contatoProprietario: text("contato_proprietario"),
+  telefoneProprietario: text("telefone_proprietario"),
+  tipoImovel: text("tipo_imovel"),
+  nomeEmpreendimento: text("nome_empreendimento"),
+  ruaAvenidaEmpreendimento: text("rua_avenida_empreendimento"),
+  numeroEmpreendimento: text("numero_empreendimento"),
+  complementoEmpreendimento: text("complemento_empreendimento"),
+  bairroEmpreendimento: text("bairro_empreendimento"),
+  cidadeEmpreendimento: text("cidade_empreendimento"),
+  estadoEmpreendimento: text("estado_empreendimento"),
+  cepEmpreendimento: text("cep_empreendimento"),
+  zonaEmpreendimento: text("zona_empreendimento"),
+  blocoTorresEmpreendimento: text("bloco_torres_empreendimento"),
+  andaresEmpreendimento: text("andares_empreendimento"),
+  aptoAndarEmpreendimento: text("apto_andar_empreendimento"),
+  valorCondominioEmpreendimento: text("valor_condominio_empreendimento"),
+  prazoEntregaEmpreendimento: text("prazo_entrega_empreendimento"),
+  status: text("status"),
+  idConstrutora: integer("id_construtora").references(() => imoveisConstrutoras.idConstrutora),
+  itensServicosEmpreendimento: jsonb("itens_servicos_empreendimento").$type<Json>(),
+  itensLazerEmpreendimento: jsonb("itens_lazer_empreendimento").$type<Json>(),
+  urlFotoCapaEmpreendimento: jsonb("url_foto_capa_empreendimento").$type<Json>(),
+  urlFotoEmpreendimento: jsonb("url_foto_empreendimento").$type<Json>(),
+  urlVideoEmpreendimento: jsonb("url_video_empreendimento").$type<Json>(),
+  dataCadastro: timestamp("data_cadastro").defaultNow(),
+  ultimaAtualizacao: timestamp("ultima_atualizacao").defaultNow(),
+});
+
+// Imóveis - Apartamentos
+export const imoveisApartamentos = pgTable("imoveis_apartamentos", {
+  idApartamento: serial("id_apartamento").primaryKey(),
+  idEmpreendimento: integer("id_empreendimento").references(() => imoveisEmpreendimentos.idEmpreendimento).notNull(),
+  statusApartamento: text("status_apartamento"),
+  areaPrivativaApartamento: numeric("area_privativa_apartamento"),
+  quartosApartamento: integer("quartos_apartamento"),
+  suitesApartamento: integer("suites_apartamento"),
+  banheirosApartamento: integer("banheiros_apartamento"),
+  vagasGaragemApartamento: integer("vagas_garagem_apartamento"),
+  tipoGaragemApartamento: text("tipo_garagem_apartamento"),
+  sacadaVarandaApartamento: boolean("sacada_varanda_apartamento"),
+  caracteristicasApartamento: text("caracteristicas_apartamento"),
+  valorVendaApartamento: numeric("valor_venda_apartamento"),
+  tituloDescritivoApartamento: text("titulo_descritivo_apartamento"),
+  descricaoApartamento: text("descricao_apartamento"),
+  statusPublicacaoApartamento: text("status_publicacao_apartamento"),
 });
 
 // Insert Schemas
@@ -198,7 +471,7 @@ export const insertAppointmentSchema = baseInsertAppointmentSchema.extend({
 // Primeiro criamos o schema básico de inserção para visitas
 const baseInsertVisitSchema = createInsertSchema(visits).omit({ id: true, createdAt: true });
 
-// Depois modificamos para aceitar tanto Date quanto string para visitedAt, semelhante ao que fizemos para agendamentos
+// Depois modificamos para aceitar tanto Date quanto string para visitedAt
 export const insertVisitSchema = baseInsertVisitSchema.extend({
   visitedAt: z.union([
     z.date(),
@@ -208,72 +481,11 @@ export const insertVisitSchema = baseInsertVisitSchema.extend({
   ])
 });
 
-// Primeiro criamos o schema básico de inserção para vendas
-const baseInsertSaleSchema = createInsertSchema(sales).omit({ id: true, createdAt: true, updatedAt: true });
-
-// Depois modificamos para permitir entrada flexível de dados
-export const insertSaleSchema = baseInsertSaleSchema.extend({
-  // Permitindo tanto Date quanto string para soldAt
-  soldAt: z.union([
-    z.date(),
-    z.string().refine((value) => !isNaN(Date.parse(value)), {
-      message: "Invalid date string",
-    }).transform(value => new Date(value))
-  ]),
-  // Permitindo tanto number quanto string para value
-  value: z.union([
-    z.number(),
-    z.string().transform(val => {
-      // Limpar a string e converter para número no formato brasileiro
-      // 1. Remove todos os caracteres que não são dígitos, vírgulas ou pontos
-      // 2. Remove todos os pontos (separadores de milhares)
-      // 3. Substitui a vírgula por ponto (para o formato decimal padrão JavaScript)
-      const cleaned = val
-        .replace(/[^\d,.]/g, '')
-        .replace(/\./g, '')
-        .replace(',', '.');
-      return parseFloat(cleaned);
-    })
-  ]),
-  // Converter valores monetários para número
-  commission: z.union([
-    z.number().optional(),
-    z.string().transform(val => {
-      if (!val) return null;
-      const cleaned = val
-        .replace(/[^\d,.]/g, '')
-        .replace(/\./g, '')
-        .replace(',', '.');
-      return parseFloat(cleaned) || null;
-    }).optional()
-  ]),
-  bonus: z.union([
-    z.number().optional(),
-    z.string().transform(val => {
-      if (!val) return null;
-      const cleaned = val
-        .replace(/[^\d,.]/g, '')
-        .replace(/\./g, '')
-        .replace(',', '.');
-      return parseFloat(cleaned) || null;
-    }).optional()
-  ]),
-  totalCommission: z.union([
-    z.number().optional(),
-    z.string().transform(val => {
-      if (!val) return null;
-      const cleaned = val
-        .replace(/[^\d,.]/g, '')
-        .replace(/\./g, '')
-        .replace(',', '.');
-      return parseFloat(cleaned) || null;
-    }).optional()
-  ])
-});
+export const insertSaleSchema = createInsertSchema(sales).omit({ id: true, createdAt: true, updatedAt: true });
 export const insertMetricSchema = createInsertSchema(metrics).omit({ id: true, createdAt: true });
 export const insertClienteNoteSchema = createInsertSchema(clienteNotes).omit({ id: true, createdAt: true, updatedAt: true });
 
-// Types
+// Type definitions
 export type User = typeof users.$inferSelect;
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type UpdateUser = z.infer<typeof updateUserSchema>;
@@ -281,19 +493,6 @@ export type UpdateUser = z.infer<typeof updateUserSchema>;
 export type Cliente = typeof clientes.$inferSelect;
 export type InsertCliente = z.infer<typeof insertClienteSchema>;
 export type UpdateCliente = z.infer<typeof updateClienteSchema>;
-
-export type ClienteFilter = {
-  status?: string;
-  assignedTo?: number;
-  brokerId?: number;
-  period?: string;
-  search?: string;
-  order?: string;
-  _timestamp?: string; // Campo para evitar cache entre requisições
-  page?: number;
-  pageSize?: number;
-  includeCount?: boolean;
-};
 
 export type Appointment = typeof appointments.$inferSelect;
 export type InsertAppointment = z.infer<typeof insertAppointmentSchema>;
@@ -310,392 +509,151 @@ export type InsertMetric = z.infer<typeof insertMetricSchema>;
 export type ClienteNote = typeof clienteNotes.$inferSelect;
 export type InsertClienteNote = z.infer<typeof insertClienteNoteSchema>;
 
-export const insertSistemaLeadsCascataSchema = createInsertSchema(sistemaLeadsCascata).omit({ id: true, createdAt: true, updatedAt: true });
-
+export type SistemaLead = typeof sistemaLeads.$inferSelect;
 export type SistemaLeadsCascata = typeof sistemaLeadsCascata.$inferSelect;
-export type InsertSistemaLeadsCascata = z.infer<typeof insertSistemaLeadsCascataSchema>;
+export type SistemaConfigAutomacaoLeads = typeof sistemaConfigAutomacaoLeads.$inferSelect;
+export type SistemaMetas = typeof sistemaMetas.$inferSelect;
+export type SistemaUsersHorarios = typeof sistemaUsersHorarios.$inferSelect;
+export type SistemaWhatsappInstances = typeof sistemaWhatsappInstances.$inferSelect;
+export type SistemaFacebookConfig = typeof sistemaFacebookConfig.$inferSelect;
+export type SistemaDailyContent = typeof sistemaDailyContent.$inferSelect;
 
-// Enums
-export const ClienteStatus = {
-  SEM_ATENDIMENTO: "Sem Atendimento",
-  NAO_RESPONDEU: "Não Respondeu",
-  EM_ATENDIMENTO: "Em Atendimento",
-  AGENDAMENTO: "Agendamento",
-  VISITA: "Visita",
-  VENDA: "Venda",
-} as const;
+export type ImoveisConstrutoras = typeof imoveisConstrutoras.$inferSelect;
+export type ImoveisContatosConstrutora = typeof imoveisContatosConstrutora.$inferSelect;
+export type ImoveisProprietariosPf = typeof imoveisProprietariosPf.$inferSelect;
+export type ImoveisEmpreendimentos = typeof imoveisEmpreendimentos.$inferSelect;
+export type ImoveisApartamentos = typeof imoveisApartamentos.$inferSelect;
 
-// Mantendo LeadStatus como alias para compatibilidade com código existente
-export const LeadStatus = ClienteStatus;
+// Schemas de inserção para as novas tabelas
+export const insertSistemaLeadSchema = createInsertSchema(sistemaLeads).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertSistemaMetasSchema = createInsertSchema(sistemaMetas).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertSistemaUsersHorariosSchema = createInsertSchema(sistemaUsersHorarios).omit({ id: true });
+export const insertSistemaWhatsappInstancesSchema = createInsertSchema(sistemaWhatsappInstances).omit({ createdAt: true, updatedAt: true });
+export const insertSistemaFacebookConfigSchema = createInsertSchema(sistemaFacebookConfig).omit({ id: true, createdAt: true, updatedAt: true, lastUpdated: true });
+export const insertSistemaDailyContentSchema = createInsertSchema(sistemaDailyContent).omit({ id: true, createdAt: true });
 
-export const AppointmentType = {
-  VISIT: "Visita",
-  MEETING: "Reunião",
-  CALL: "Ligação",
-} as const;
+export const insertImoveisConstructorasSchema = createInsertSchema(imoveisConstrutoras).omit({ idConstrutora: true, createdAt: true, updatedAt: true });
+export const insertImoveisContatosConstructoraSchema = createInsertSchema(imoveisContatosConstrutora).omit({ idContatoConstrutora: true, createdAt: true, updatedAt: true });
+export const insertImoveisProprietariosPfSchema = createInsertSchema(imoveisProprietariosPf).omit({ idProprietarioPf: true, createdAt: true, updatedAt: true });
+export const insertImoveisEmpreendimentosSchema = createInsertSchema(imoveisEmpreendimentos).omit({ idEmpreendimento: true, dataCadastro: true, ultimaAtualizacao: true });
+export const insertImoveisApartamentosSchema = createInsertSchema(imoveisApartamentos).omit({ idApartamento: true });
 
-export const AppointmentStatus = {
-  SCHEDULED: "Agendado",
-  CONFIRMED: "Confirmado",
-  COMPLETED: "Concluído",
-  CANCELED: "Cancelado",
-} as const;
+// Tipos de inserção para as novas tabelas
+export type InsertSistemaLead = z.infer<typeof insertSistemaLeadSchema>;
+export type InsertSistemaMetas = z.infer<typeof insertSistemaMetasSchema>;
+export type InsertSistemaUsersHorarios = z.infer<typeof insertSistemaUsersHorariosSchema>;
+export type InsertSistemaWhatsappInstances = z.infer<typeof insertSistemaWhatsappInstancesSchema>;
+export type InsertSistemaFacebookConfig = z.infer<typeof insertSistemaFacebookConfigSchema>;
+export type InsertSistemaDailyContent = z.infer<typeof insertSistemaDailyContentSchema>;
 
-export const Department = {
-  MANAGEMENT: "Gestão",
-  MARKETING: "Marketing",
-  CUSTOMER_SERVICE: "Central de Atendimento",
-  SALES: "Vendas",
-} as const;
+export type InsertImoveisConstrutoras = z.infer<typeof insertImoveisConstructorasSchema>;
+export type InsertImoveisContatosConstrutora = z.infer<typeof insertImoveisContatosConstructoraSchema>;
+export type InsertImoveisProprietariosPf = z.infer<typeof insertImoveisProprietariosPfSchema>;
+export type InsertImoveisEmpreendimentos = z.infer<typeof insertImoveisEmpreendimentosSchema>;
+export type InsertImoveisApartamentos = z.infer<typeof insertImoveisApartamentosSchema>;
 
-export const Role = {
-  MANAGER: "Gestor",
-  MARKETING: "Marketing",
-  CONSULTANT: "Consultor de Atendimento",
-  BROKER_SENIOR: "Corretor Senior",
-  EXECUTIVE: "Executivo",
-  BROKER_JUNIOR: "Corretor Junior", 
-  BROKER_TRAINEE: "Corretor Trainee",
-} as const;
-
-// WhatsApp Instance Status Enum
-export const WhatsAppInstanceStatus = {
-  CONNECTED: "Conectado",
-  DISCONNECTED: "Desconectado",
-  CONNECTING: "Conectando",
-  DISCONNECTING: "Desconectando",
-  WAITING_QR_SCAN: "Aguardando Scan do QR Code",
-  FAILED: "Falha",
-  PENDING: "Pendente",
-  ERROR: "Erro",
-} as const;
-
-// Mapeamento de status da Evolution API para nosso sistema
-export const EvolutionAPIStatusMapping = {
-  "open": WhatsAppInstanceStatus.CONNECTED,
-  "connected": WhatsAppInstanceStatus.CONNECTED,
-  "close": WhatsAppInstanceStatus.DISCONNECTED,
-  "disconnected": WhatsAppInstanceStatus.DISCONNECTED,
-  "connecting": WhatsAppInstanceStatus.CONNECTING,
-} as const;
-
-// WhatsApp Instance model
-export const whatsappInstances = pgTable("sistema_whatsapp_instances", {
-  instanciaId: text("instancia_id").primaryKey(), // Chave primária TEXT conforme estrutura real do banco
-  instanceName: text("instance_name").notNull().unique(),
-  userId: integer("user_id").references(() => users.id).notNull(), // Usuário associado à instância
-  // Removidas colunas isActive e isPrimary que não existem no banco
-  status: text("instance_status").default(WhatsAppInstanceStatus.DISCONNECTED),
-  // Removida a coluna qr_code que não existe no banco de dados
-  base64: text("base64"), // Campo base64 que existe no banco
-  webhook: text("webhook"), // Campo webhook que existe no banco
-  remoteJid: text("remote_jid"), // JID do WhatsApp (ex: "553499999999@s.whatsapp.net")
-  lastConnection: timestamp("last_connection"),
-  createdAt: timestamp("created_at").defaultNow(),
-  updatedAt: timestamp("updated_at").defaultNow(),
-});
-
-// Insert Schemas para WhatsApp
-// Agora instanciaId é opcional para permitir geração automática no backend
-export const insertWhatsappInstanceSchema = createInsertSchema(whatsappInstances).omit({ 
-  createdAt: true, 
-  updatedAt: true 
-}).extend({
-  instanciaId: z.string().optional()
-});
-
-// Definição de interface para compatibilidade com código existente
-// Atenção: A tabela whatsapp_logs foi removida do banco de dados
-export interface WhatsappLog {
-  id: number;
-  instanceId?: string | null;
-  type: string;
-  message: string;
-  data?: any;
-  createdAt: Date;
-}
-
-// Schema para compatibilidade com código existente
-export interface InsertWhatsappLog {
-  instanceId?: string | null;
-  type: string;
-  message: string;
-  data?: any;
-}
-
-// Facebook API Configuration model
-export const facebookConfig = pgTable("sistema_facebook_config", {
-  id: serial("id").primaryKey(),
-  appId: text("app_id").notNull(),
-  appSecret: text("app_secret").notNull(),
-  accessToken: text("access_token").notNull(),
-  userAccessToken: text("user_access_token"),
-  verificationToken: text("verification_token"), // Token para validação de webhook
-  pageId: text("page_id"),
-  adAccountId: text("ad_account_id"),
-  webhookEnabled: boolean("webhook_enabled").default(false),
-  isActive: boolean("is_active").default(true),
-  lastUpdated: timestamp("last_updated").defaultNow(),
-  createdAt: timestamp("created_at").defaultNow(),
-  updatedAt: timestamp("updated_at").defaultNow(),
-});
-
-// Tabela do sistema de metas
-export const sistemaMetas = pgTable("sistema_metas", {
-  id: serial("id").primaryKey(),
-  userId: integer("user_id").references(() => users.id).notNull(),
-  periodo: text("periodo").default("mensal").notNull(), // mensal, trimestral, semestral, anual
-  ano: integer("ano").notNull(),
-  mes: integer("mes").notNull(), // 1-12
-  // Metas de valores absolutos
-  agendamentos: integer("agendamentos").default(0),
-  visitas: integer("visitas").default(0),
-  vendas: integer("vendas").default(0),
-  // Metas de conversão em porcentagem (colunas existentes no banco)
-  conversaoAgendamentos: integer("conversao_agendamentos").default(0), // % de conversão de agendamentos em visitas
-  conversaoVisitas: integer("conversao_visitas").default(0), // % de conversão de visitas em vendas  
-  conversaoVendas: integer("conversao_vendas").default(0), // % de conversão de vendas
-  createdAt: timestamp("created_at").defaultNow(),
-  updatedAt: timestamp("updated_at").defaultNow(),
-});
-
-// Schema de inserção para SistemaMeta
-export const insertSistemaMetaSchema = createInsertSchema(sistemaMetas).omit({
-  id: true,
-  createdAt: true,
-  updatedAt: true,
-});
-
-// Schema de atualização para SistemaMeta (permite campos parciais)
-export const updateSistemaMetaSchema = insertSistemaMetaSchema.partial();
-
-// Tipos para SistemaMeta
-export type SistemaMeta = typeof sistemaMetas.$inferSelect;
-export type InsertSistemaMeta = z.infer<typeof insertSistemaMetaSchema>;
-export type UpdateSistemaMeta = z.infer<typeof updateSistemaMetaSchema>;
-
-// Insert Schema para Facebook Config
-export const insertFacebookConfigSchema = createInsertSchema(facebookConfig).omit({ 
-  id: true, 
-  createdAt: true, 
-  updatedAt: true,
-  lastUpdated: true
-});
-
-// Update Schema para Facebook Config
-export const updateFacebookConfigSchema = insertFacebookConfigSchema.partial();
-
-// Tipos para WhatsApp
-export type WhatsappInstance = typeof whatsappInstances.$inferSelect;
-export type InsertWhatsappInstance = z.infer<typeof insertWhatsappInstanceSchema>;
-
-// Tipos para Facebook
-export type FacebookConfig = typeof facebookConfig.$inferSelect;
-export type InsertFacebookConfig = z.infer<typeof insertFacebookConfigSchema>;
-export type UpdateFacebookConfig = z.infer<typeof updateFacebookConfigSchema>;
-
-// Comentário: Estas definições foram movidas para mais perto da definição da tabela sistemaMetas
-// e já estão declaradas nas linhas 434-446
-
-// Moved to after the leadAutomationConfig table definition to avoid reference errors
-
-// Enums para status e fonte dos leads
-export const LeadSourceEnum = {
-  FACEBOOK_ADS: "Facebook Ads",
-  SITE: "Site",
-  WHATSAPP: "WhatsApp",
-  INSTAGRAM: "Instagram",
-  INDICACAO: "Indicação",
-  LIGACAO: "Ligação",
-  OUTRO: "Outro"
-} as const;
-
-export const LeadStatusEnum = {
-  SEM_ATENDIMENTO: "Sem Atendimento",
-  EM_ATENDIMENTO: "Em Atendimento",
-  QUALIFICADO: "Qualificado",
-  CONVERTIDO: "Convertido",
-  NAO_CONVERTIDO: "Não Convertido"
-} as const;
-
-// Enum para métodos de distribuição de leads
-export const DistributionMethodEnum = {
-  VOLUME: "volume",
-  PERFORMANCE: "performance",
-  ROUND_ROBIN: "round-robin"
-} as const;
-
-// Tabela de Leads
-export const leads = pgTable("sistema_leads", {
-  id: serial("id").primaryKey(),
-  fullName: text("full_name").notNull(),
-  email: text("email"),
-  phone: text("phone").notNull(),
-  source: text("source").notNull(), // Fonte do lead (Facebook Ads, Site, WhatsApp, etc.)
-  sourceDetails: jsonb("source_details").$type<Json>(), // Detalhes da origem (JSON)
-  status: text("status").default(LeadStatusEnum.SEM_ATENDIMENTO), // Status do lead no funil
-  assignedTo: integer("assigned_to").references(() => users.id), // Consultor responsável
-  notes: text("notes"), // Observações sobre o lead
-  tags: jsonb("tags").$type<string[]>(), // Tags associadas ao lead
-  lastActivityDate: timestamp("last_activity_date"), // Data da última atividade
-  isRecurring: boolean("is_recurring").default(false), // Lead recorrente
-  score: integer("score"), // Pontuação do lead (qualificação)
-  interesse: text("interesse"), // Interesse principal do lead
-  budget: numeric("budget", { precision: 12, scale: 2 }), // Orçamento disponível
-  clienteId: integer("cliente_id").references(() => clientes.id), // Referência ao cliente (se convertido)
-  metaData: jsonb("meta_data").$type<Json>(), // Metadados adicionais
-  createdAt: timestamp("created_at").defaultNow(),
-  updatedAt: timestamp("updated_at").defaultNow(),
-});
-
-// Relações serão definidas no final do arquivo
-
-// Insert Schema para Lead
-export const insertLeadSchema = createInsertSchema(leads).omit({ 
-  id: true, 
-  createdAt: true, 
-  updatedAt: true 
-});
-
-// Update Schema para Lead
-export const updateLeadSchema = insertLeadSchema.partial();
-
-// Tipos para Lead
-export type Lead = typeof leads.$inferSelect;
-export type InsertLead = z.infer<typeof insertLeadSchema>;
-export type UpdateLead = z.infer<typeof updateLeadSchema>;
-
-// Definindo todas as relações no final do arquivo para evitar problemas de referência circular
-// Relações do usuário
+// Relations
 export const usersRelations = relations(users, ({ many }) => ({
-  assignedLeads: many(leads, { relationName: "lead_user" }),
-  assignedClientes: many(clientes, { relationName: "cliente_user" })
+  assignedClientes: many(clientes, { relationName: "cliente_assigned_user" }),
+  brokerClientes: many(clientes, { relationName: "cliente_broker_user" }),
+  appointments: many(appointments),
+  visits: many(visits),
+  sales: many(sales),
+  metrics: many(metrics),
+  clienteNotes: many(clienteNotes),
+  sistemaLeads: many(sistemaLeads),
 }));
 
-// Relações do lead
-export const leadsRelations = relations(leads, ({ one }) => ({
-  user: one(users, {
-    fields: [leads.assignedTo],
-    references: [users.id],
-    relationName: "lead_user"
-  }),
-  cliente: one(clientes, {
-    fields: [leads.clienteId],
-    references: [clientes.id],
-    relationName: "lead_cliente"
-  })
-}));
-
-// Tabela de configuração de automação de leads
-export const leadAutomationConfig = pgTable("sistema_config_automacao_leads", {
-  id: serial("id").primaryKey(),
-  active: boolean("active").default(true),
-  name: text("name").notNull(),
-  distributionMethod: text("distribution_method").default(DistributionMethodEnum.VOLUME),
-  // Colunas removidas em migrations anteriores:
-  // useSpecialty, notifyVisual, notifySystem, notifyManager,
-  // escalateToManager, identifyByDocument, basedOnTime, basedOnOutcome, centralizedComm, customRules
-  
-  // Colunas removidas na última migração:
-  // useAvailability, useRegion, workingHoursStart, workingHoursEnd, workingHoursWeekend,
-  // identifyByEmail, identifyByPhone, inactivityPeriod, contactAttempts, createdBy
-  
-  // Colunas adicionadas para identificação de lead recorrente
-  byName: boolean("by_name").default(true), // Identificar lead recorrente por nome
-  byPhone: boolean("by_phone").default(true), // Identificar lead recorrente por telefone
-  byEmail: boolean("by_email").default(true), // Identificar lead recorrente por e-mail
-  
-  // Colunas adicionadas para ações com leads recorrentes
-  keepSameConsultant: boolean("keep_same_consultant").default(true), // Manter com o mesmo consultor
-  assignNewConsultant: boolean("assign_new_consultant").default(false), // Atribuir a um novo consultor
-  
-  firstContactSLA: integer("first_contact_sla").default(30), // Tempo em minutos
-  warningPercentage: integer("warning_percentage").default(75), // % do SLA para alerta
-  criticalPercentage: integer("critical_percentage").default(90), // % do SLA para crítico
-  autoRedistribute: boolean("auto_redistribute").default(false),
-  rotationUsers: jsonb("rotation_users").$type<number[]>().default([]),
-  
-  // Configurações SLA em Cascata
-  cascadeSLAHours: integer("cascade_sla_hours").default(24), // Tempo em horas para cada usuário na cascata
-  cascadeUserOrder: jsonb("cascade_user_order").$type<number[]>().default([]), // Ordem dos usuários na fila de cascata
-  createdAt: timestamp("created_at").defaultNow(),
-  updatedAt: timestamp("updated_at").defaultNow(),
-});
-
-// Relações do cliente
 export const clientesRelations = relations(clientes, ({ one, many }) => ({
   assignedUser: one(users, {
     fields: [clientes.assignedTo],
     references: [users.id],
-    relationName: "cliente_user"
+    relationName: "cliente_assigned_user"
   }),
   broker: one(users, {
     fields: [clientes.brokerId],
-    references: [users.id]
+    references: [users.id],
+    relationName: "cliente_broker_user"
   }),
-  lead: many(leads, { relationName: "lead_cliente" })
+  appointments: many(appointments),
+  visits: many(visits),
+  sales: many(sales),
+  notes: many(clienteNotes),
 }));
 
-// Schema de inserção para LeadAutomationConfig
-export const insertLeadAutomationConfigSchema = createInsertSchema(leadAutomationConfig).omit({
-  id: true,
-  createdAt: true,
-  updatedAt: true
-});
+export const appointmentsRelations = relations(appointments, ({ one }) => ({
+  cliente: one(clientes, {
+    fields: [appointments.clienteId],
+    references: [clientes.id],
+  }),
+  user: one(users, {
+    fields: [appointments.userId],
+    references: [users.id],
+  }),
+}));
 
-// Schema de atualização para LeadAutomationConfig
-export const updateLeadAutomationConfigSchema = insertLeadAutomationConfigSchema.partial();
+export const visitsRelations = relations(visits, ({ one }) => ({
+  cliente: one(clientes, {
+    fields: [visits.clienteId],
+    references: [clientes.id],
+  }),
+  user: one(users, {
+    fields: [visits.userId],
+    references: [users.id],
+  }),
+}));
 
-// Tipos para LeadAutomationConfig
-export type LeadAutomationConfig = typeof leadAutomationConfig.$inferSelect;
-export type InsertLeadAutomationConfig = z.infer<typeof insertLeadAutomationConfigSchema>;
-export type UpdateLeadAutomationConfig = z.infer<typeof updateLeadAutomationConfigSchema>;
+export const salesRelations = relations(sales, ({ one }) => ({
+  cliente: one(clientes, {
+    fields: [sales.clienteId],
+    references: [clientes.id],
+  }),
+  user: one(users, {
+    fields: [sales.userId],
+    references: [users.id],
+  }),
+}));
 
-// Sistema Users Horarios - Tabela para horários de uso do sistema por usuário
-export const sistemaUsersHorarios = pgTable("sistema_users_horarios", {
-  id: serial("id").primaryKey(),
-  userId: integer("user_id").references(() => users.id, { onDelete: 'cascade' }),
-  diaSemana: text("dia_semana").notNull(), // 'SEG', 'TER', etc.
-  horarioInicio: time("horario_inicio").notNull(),
-  horarioFim: time("horario_fim").notNull(),
-  diaTodo: boolean("dia_todo").default(false),
-});
+export const clienteNotesRelations = relations(clienteNotes, ({ one }) => ({
+  cliente: one(clientes, {
+    fields: [clienteNotes.clienteId],
+    references: [clientes.id],
+  }),
+  user: one(users, {
+    fields: [clienteNotes.userId],
+    references: [users.id],
+  }),
+}));
 
-// Schema para inserção de horários
-export const insertUserHorarioSchema = createInsertSchema(sistemaUsersHorarios).omit({ id: true });
-export type UserHorario = typeof sistemaUsersHorarios.$inferSelect;
-export type InsertUserHorario = z.infer<typeof insertUserHorarioSchema>;
+export const sistemaLeadsRelations = relations(sistemaLeads, ({ one }) => ({
+  assignedUser: one(users, {
+    fields: [sistemaLeads.assignedTo],
+    references: [users.id],
+  }),
+  cliente: one(clientes, {
+    fields: [sistemaLeads.clienteId],
+    references: [clientes.id],
+  }),
+}));
 
-// Sistema Daily Content - Tabela para conteúdo diário gerado pelo OpenAI
-export const dailyContent = pgTable("sistema_daily_content", {
-  id: serial("id").primaryKey(),
-  title: text("title").notNull(),
-  content: text("content").notNull(),
-  imageUrl: text("image_url"),
-  category: text("category").notNull(), // "mercado_imobiliario", "investimentos", "dicas_vendas", etc.
-  tags: jsonb("tags").$type<string[]>().default([]),
-  rating: integer("rating").default(0), // 0-5 para avaliar a qualidade do conteúdo
-  isActive: boolean("is_active").default(true),
-  generatedDate: timestamp("generated_date").defaultNow(),
-  createdAt: timestamp("created_at").defaultNow(),
-  updatedAt: timestamp("updated_at").defaultNow(),
-});
+export const imoveisEmpreendimentosRelations = relations(imoveisEmpreendimentos, ({ one, many }) => ({
+  construtora: one(imoveisConstrutoras, {
+    fields: [imoveisEmpreendimentos.idConstrutora],
+    references: [imoveisConstrutoras.idConstrutora],
+  }),
+  apartamentos: many(imoveisApartamentos),
+}));
 
-// Schema para inserção de conteúdo diário
-export const insertDailyContentSchema = createInsertSchema(dailyContent).omit({ 
-  id: true,
-  createdAt: true,
-  updatedAt: true,
-  generatedDate: true
-});
+export const imoveisApartamentosRelations = relations(imoveisApartamentos, ({ one }) => ({
+  empreendimento: one(imoveisEmpreendimentos, {
+    fields: [imoveisApartamentos.idEmpreendimento],
+    references: [imoveisEmpreendimentos.idEmpreendimento],
+  }),
+}));
 
-// Schema para atualização de conteúdo diário
-export const updateDailyContentSchema = insertDailyContentSchema.partial();
-
-// Tipos para Daily Content
-export type DailyContent = typeof dailyContent.$inferSelect;
-export type InsertDailyContent = z.infer<typeof insertDailyContentSchema>;
-export type UpdateDailyContent = z.infer<typeof updateDailyContentSchema>;
-
-// A definição da tabela sistemaMetas já existe na linha 414
-// Esta segunda definição foi removida para evitar conflitos
+export const imoveisContatosConstructoraRelations = relations(imoveisContatosConstrutora, ({ one }) => ({
+  construtora: one(imoveisConstrutoras, {
+    fields: [imoveisContatosConstrutora.idConstrutora],
+    references: [imoveisConstrutoras.idConstrutora],
+  }),
+}));
